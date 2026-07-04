@@ -1,0 +1,10 @@
+# ATP-ServeBot heavy tier — local-dev/stub dependencies.
+# NO torch / CUDA / boto3 here: the model pipeline is a stub (Milestone Step 2)
+# and storage runs on local disk. The real GPU + AWS deps arrive with Steps 3-4.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+
+# tests
+pytest>=8.0
+httpx>=0.27

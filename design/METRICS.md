@@ -49,8 +49,10 @@ w = W − E = ( 0.168,  0.152, -0.038)     ‖w‖ = 0.2296
 u·w = (-0.190)(0.168) + (-0.158)(0.152) + (0.041)(-0.038)
     = -0.03192 - 0.02402 - 0.00156 = -0.05750
 cos θ = -0.05750 / (0.2506·0.2296) = -0.05750 / 0.05754 = -0.99930
-θ = arccos(-0.99930) = 177.9°
+θ = arccos(-0.99930) ≈ 177.9°   ← from the rounded cosine above
 ```
+**Compute at full precision.** The `177.9°` above comes from the intermediate values *as rounded for display*. Carrying full precision through the same keypoints gives `cos θ = -0.99915…` → **θ = 177.6°**. Implementations must not round intermediates; the canonical expected value for this keypoint set is **177.6°** (this is what the metric engine's golden test asserts).
+
 *(The literal numbers in the API example were illustrative; this shows the exact arithmetic an implementer must reproduce. Use the real keypoints at runtime.)*
 
 **Output object (implemented form):**
