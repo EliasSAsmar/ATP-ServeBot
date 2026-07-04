@@ -1,0 +1,51 @@
+# --- Secrets / credentials (public repo — never commit) ---
+.env
+.env.*
+*.pem
+*.key
+**/secrets.*
+aws-credentials*
+
+# --- Model checkpoints / large binaries ---
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+checkpoints/
+weights/
+models_cache/
+
+# --- Media artifacts (clips, meshes, test captures) ---
+*.glb
+*.webm
+*.mp4
+sample_clips/
+scratch/
+
+# --- Python (server/) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / React (app/) ---
+node_modules/
+dist/
+build/
+.vite/
+*.local
+npm-debug.log*
+yarn-error.log*
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
