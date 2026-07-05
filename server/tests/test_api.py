@@ -224,7 +224,8 @@ class TestEndToEnd:
         assert kps["units"] == "meters"
         assert len(kps["points"]) == 70
         by_name = {p["name"]: p for p in kps["points"]}
-        assert by_name["right_shoulder"]["index"] == 12
+        assert by_name["right_shoulder"]["index"] == 6  # confirmed MHR70
+        assert by_name["right_wrist"]["index"] == 41  # wrist at end of hand chain
         assert by_name["right_shoulder"]["xyz"] == [0.182, 1.402, 0.031]
         assert all(0.0 <= p["score"] <= 1.0 for p in kps["points"])
 

@@ -122,22 +122,25 @@ If no 2D keypoints are available in the window, **fall back** to trusting `conta
 - Ensure `up_axis`/units in the GLB match what the API reports; three.js in the client applies no implicit conversion beyond what `UI.md` specifies.
 - Upload GLB to S3; return presigned GET as `glb_url` (`API_CONTRACT.md §4c`).
 
-### 4.4 The 70-keypoint skeleton — canonical index/name map [CONFIRM]
+### 4.4 The 70-keypoint skeleton — CONFIRMED (MHR70)
 
-The result payload reports each keypoint with an `index` **and** a human `name`. The **authoritative** index→name mapping is defined by the `sam-3d-body-dinov3` checkpoint and **must be read from the model's own skeleton definition at implementation time**, not invented. Persist it as a single constant (`SAM3D_BODY_70_JOINTS`) and reference it everywhere (metrics depend on it).
+**Hard gate resolved.** The 70 keypoints are the first 70 of the 308 **Momentum Human Rig (MHR)** keypoints. The authoritative index→name map is defined in `sam_3d_body/metadata/mhr70.py` (facebookresearch/sam-3d-body) and is persisted verbatim as `SAM3D_BODY_70_JOINTS` in `server/servebot/skeleton.py`. A real model output array (shape `70×3`, MHR70 order) maps position `i` → `SAM3D_BODY_70_JOINTS[i]`. The metric engine selects joints **by name**, so it is robust to the ordering.
 
-Minimum joints v1 metrics require (must resolve to real indices):
+Confirmed indices for the joints v1 metrics use:
 
-| Canonical name | Used by |
-|---|---|
-| `right_shoulder`, `left_shoulder` | elbow angle, shoulder angle (stub) |
-| `right_elbow`, `left_elbow` | elbow angle |
-| `right_wrist`, `left_wrist` | elbow angle |
-| `right_hip`, `left_hip` | knee/torso metrics (stub) |
-| `right_knee`, `left_knee` | knee flexion (stub) |
-| `right_ankle`, `left_ankle` | knee flexion (stub) |
+| Canonical name | Index | Used by |
+|---|---|---|
+| `left_shoulder` / `right_shoulder` | 5 / 6 | elbow angle, shoulder angle (stub) |
+| `left_elbow` / `right_elbow` | 7 / 8 | elbow angle |
+| `right_wrist` | **41** | elbow angle |
+| `left_wrist` | **62** | elbow angle |
+| `left_hip` / `right_hip` | 9 / 10 | knee/torso metrics (stub) |
+| `left_knee` / `right_knee` | 11 / 12 | knee flexion (stub) |
+| `left_ankle` / `right_ankle` | 13 / 14 | knee flexion (stub) |
 
-> **Do not ship** until the six arm joints (`{l,r}_shoulder/elbow/wrist`) are confirmed against the model's real indices. The elbow-angle metric is meaningless if these are mismapped.
+> ⚠️ **Gotcha (verified, cost us a placeholder bug):** the wrists are **not** COCO-adjacent to the elbows — they sit at the *end* of the per-hand keypoint chains (`right_wrist=41` after the 20 right-hand points, `left_wrist=62` after the 20 left-hand points). MHR70 order is: head 0–4, upper arms 5–8, legs 9–14, feet 15–20, right hand 21–40, `right_wrist` 41, left hand 42–61, `left_wrist` 62, then bony landmarks `olecranon`/`cubital_fossa`/`acromion` 63–68 and `neck` 69. MHR70 also carries **hands (40 pts)** and extra elbow/shoulder landmarks (olecranon, cubital fossa, acromion) — useful for future metrics.
+
+**Inference path (confirmed on the real repo):** the core estimator runs without the detector/SAM/FOV components — pass a `bboxes` array (from the edge MediaPipe crop), `masks=None`, `use_mask=False`, and let `cam_int` default; use `inference_type="body"` for the 70-kpt body output without the hand decoder. Meta's `process_one_image` hardcodes `.to("cuda")` — patch to the model device for non-CUDA runs.
 
 ## 5. Model lifecycle & VRAM
 

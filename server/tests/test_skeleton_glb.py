@@ -18,11 +18,15 @@ class TestSkeleton:
         assert len(SAM3D_BODY_70_JOINTS) == 70
         assert len(set(SAM3D_BODY_70_JOINTS)) == 70
 
-    def test_contract_example_arm_indices(self):
-        # API_CONTRACT.md §4c example indices for the arm joints.
-        assert JOINT_INDEX["right_shoulder"] == 12
-        assert JOINT_INDEX["right_elbow"] == 14
-        assert JOINT_INDEX["right_wrist"] == 16
+    def test_confirmed_mhr70_arm_indices(self):
+        # CONFIRMED against facebook/sam-3d-body-dinov3 (MHR70). Note the wrists
+        # are at the end of the hand chains, not adjacent to the elbows.
+        assert JOINT_INDEX["left_shoulder"] == 5
+        assert JOINT_INDEX["right_shoulder"] == 6
+        assert JOINT_INDEX["left_elbow"] == 7
+        assert JOINT_INDEX["right_elbow"] == 8
+        assert JOINT_INDEX["right_wrist"] == 41
+        assert JOINT_INDEX["left_wrist"] == 62
 
     def test_six_arm_joints_resolve(self):
         for name in (
