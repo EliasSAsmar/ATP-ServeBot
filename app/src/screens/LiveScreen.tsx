@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClipRecorder } from "../capture/clipRecorder";
 import { CloudStatusChip } from "../components/CloudStatusChip";
+import { Panel, TermWindow } from "../components/Terminal";
 import type { Settings } from "../config";
 import { DETECTOR_VERSION, ServeDetector, type ServeDetection } from "../detect/serveDetector";
 import type { CapturedClip } from "../flow/analysis";
@@ -252,96 +253,111 @@ export function LiveScreen({
 
   const blocking = liveState === "permission_denied" || liveState === "camera_error";
 
+  const detectorArmed =
+    captureMode === "auto" && !poseUnavailable && !blocking && liveState !== "initializing";
+
   return (
-    <div className="screen live-screen">
-      <video ref={videoRef} className="live-video mirrored" playsInline muted />
-      <canvas ref={canvasRef} className="live-canvas mirrored" />
-
-      <div className="live-topbar">
-        <CloudStatusChip status={health.status} mock={settings.mockApi} compact />
-        <span className="chip">{settings.handedness === "right" ? "Right-handed" : "Left-handed"}</span>
-        <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} aria-label="Settings">
-          &#9881;
-        </button>
-      </div>
-
-      {liveState === "initializing" ? (
-        <div className="live-center-note">
-          <div className="spinner" aria-hidden="true" />
-          <p>Starting camera / loading pose model…</p>
-        </div>
-      ) : null}
-
-      {liveState === "no_pose" && !poseUnavailable ? (
-        <div className="live-center-note subtle">
-          <p>Step back so your whole body is in frame.</p>
-        </div>
-      ) : null}
-
-      {poseUnavailable && !blocking ? (
-        <div className="live-banner">
-          Pose tracking unavailable — auto-detect is off, but manual capture still works.
-        </div>
-      ) : null}
-
-      {flash ? (
-        <div className="capture-flash" role="status">
-          <span>Captured!</span>
-        </div>
-      ) : null}
-
-      {blocking ? (
-        <div className="live-blocking">
-          <div className="card">
-            <h3>{liveState === "permission_denied" ? "Camera permission needed" : "Camera error"}</h3>
-            <p className="error-note">{cameraMessage}</p>
-            <button className="btn btn-primary" onClick={() => setRestartKey((k) => k + 1)}>
-              Retry
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="live-bottombar">
-          <div className="mode-toggle" role="radiogroup" aria-label="Capture mode">
-            <button
-              role="radio"
-              aria-checked={captureMode === "auto"}
-              className={`btn btn-toggle ${captureMode === "auto" ? "btn-active" : ""}`}
-              onClick={() => setCaptureMode("auto")}
-              disabled={poseUnavailable}
-              title={poseUnavailable ? "Auto-detect needs pose tracking" : undefined}
-            >
-              Auto
-            </button>
-            <button
-              role="radio"
-              aria-checked={captureMode === "manual"}
-              className={`btn btn-toggle ${captureMode === "manual" ? "btn-active" : ""}`}
-              onClick={() => setCaptureMode("manual")}
-            >
-              Manual
-            </button>
-          </div>
-
-          <button
-            className="btn btn-capture"
-            onClick={manualCapture}
-            disabled={capturing || recorderUnavailable || liveState === "initializing"}
-            aria-label="Capture the last few seconds"
-          >
-            {capturing ? "Saving…" : "Capture"}
+    <div className="stage live-stage">
+      <TermWindow context="~/live" className="live-win">
+        <div className="hud">
+          <span className="rec" title="Recording buffer is rolling">
+            <span
+              className={`rec-dot ${recorderUnavailable ? "rec-off" : ""}`}
+              aria-hidden="true"
+            />
+            <span>{recorderUnavailable ? "no recorder" : "REC · buffering"}</span>
+          </span>
+          <span aria-hidden="true">detector: {detectorArmed ? "armed" : "off"}</span>
+          <span className="spacer" />
+          <span>hand={settings.handedness}</span>
+          <CloudStatusChip status={health.status} mock={settings.mockApi} compact />
+          <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} aria-label="Settings">
+            &#9881;
           </button>
-
-          <div className="buffer-indicator" title="Recording buffer is rolling">
-            <span className={`buffer-dot ${recorderUnavailable ? "buffer-off" : ""}`} aria-hidden="true" />
-            <span className="small muted">{recorderUnavailable ? "no recorder" : "buffering"}</span>
-          </div>
         </div>
-      )}
 
-      {captureMode === "auto" && !poseUnavailable && !blocking && liveState !== "initializing" ? (
-        <div className="live-hint muted small">Serve naturally — the app detects it automatically.</div>
-      ) : null}
+        <div className="live-pane" aria-label="Camera preview with skeleton overlay">
+          <video ref={videoRef} className="live-video mirrored" playsInline muted />
+          <canvas ref={canvasRef} className="live-canvas mirrored" />
+
+          {liveState === "initializing" ? (
+            <div className="live-center-note">
+              <div className="spinner" aria-hidden="true" />
+              <p>Starting camera / loading pose model…</p>
+            </div>
+          ) : null}
+
+          {liveState === "no_pose" && !poseUnavailable ? (
+            <div className="live-center-note subtle">
+              <p>Step back so your whole body is in frame.</p>
+            </div>
+          ) : null}
+
+          {poseUnavailable && !blocking ? (
+            <div className="live-banner">
+              Pose tracking unavailable — auto-detect is off, but manual capture still works.
+            </div>
+          ) : null}
+
+          {flash ? (
+            <div className="capture-flash" role="status">
+              <span>✓ Captured!</span>
+            </div>
+          ) : null}
+
+          {blocking ? (
+            <div className="live-blocking">
+              <Panel label="error" className="panel-error" ariaLabel="Camera error">
+                <h3>
+                  {liveState === "permission_denied" ? "Camera permission needed" : "Camera error"}
+                </h3>
+                <p className="error-note">{cameraMessage}</p>
+                <button className="btn btn-primary" onClick={() => setRestartKey((k) => k + 1)}>
+                  Retry
+                </button>
+              </Panel>
+            </div>
+          ) : null}
+        </div>
+
+        {!blocking ? (
+          <div className="live-controls">
+            <div className="mode-toggle" role="radiogroup" aria-label="Capture mode">
+              <button
+                role="radio"
+                aria-checked={captureMode === "auto"}
+                className={`btn btn-toggle ${captureMode === "auto" ? "btn-active" : ""}`}
+                onClick={() => setCaptureMode("auto")}
+                disabled={poseUnavailable}
+                title={poseUnavailable ? "Auto-detect needs pose tracking" : undefined}
+              >
+                Auto
+              </button>
+              <button
+                role="radio"
+                aria-checked={captureMode === "manual"}
+                className={`btn btn-toggle ${captureMode === "manual" ? "btn-active" : ""}`}
+                onClick={() => setCaptureMode("manual")}
+              >
+                Manual
+              </button>
+            </div>
+
+            <button
+              className="btn btn-primary btn-capture"
+              onClick={manualCapture}
+              disabled={capturing || recorderUnavailable || liveState === "initializing"}
+              aria-label="Capture the last few seconds"
+            >
+              {capturing ? "Saving…" : "Capture"}
+            </button>
+          </div>
+        ) : null}
+
+        {detectorArmed ? (
+          <div className="live-hint">Serve naturally — the app detects it automatically.</div>
+        ) : null}
+      </TermWindow>
     </div>
   );
 }

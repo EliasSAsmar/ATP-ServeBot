@@ -38,11 +38,12 @@ export function drawSkeleton(
 ): void {
   const visible = (i: number) => (landmarks[i]?.visibility ?? 1) >= MIN_VISIBILITY;
 
+  // Phosphor-green stroke with a soft glow — matches the terminal theme.
   ctx.lineWidth = Math.max(2, width / 320);
   ctx.lineCap = "round";
-  ctx.strokeStyle = highlight ? "rgba(122, 255, 178, 0.95)" : "rgba(94, 234, 212, 0.85)";
-  ctx.shadowColor = "rgba(0,0,0,0.45)";
-  ctx.shadowBlur = 4;
+  ctx.strokeStyle = highlight ? "rgba(160, 255, 200, 0.95)" : "rgba(90, 242, 154, 0.9)";
+  ctx.shadowColor = "rgba(90, 242, 154, 0.45)";
+  ctx.shadowBlur = 6;
 
   for (const [a, b] of BONES) {
     if (!landmarks[a] || !landmarks[b] || !visible(a) || !visible(b)) continue;
@@ -52,7 +53,7 @@ export function drawSkeleton(
     ctx.stroke();
   }
 
-  ctx.fillStyle = highlight ? "rgba(190, 255, 220, 0.95)" : "rgba(255, 255, 255, 0.9)";
+  ctx.fillStyle = highlight ? "rgba(190, 255, 220, 0.95)" : "rgba(198, 214, 205, 0.95)";
   const r = Math.max(3, width / 260);
   for (const i of JOINTS) {
     if (!landmarks[i] || !visible(i)) continue;

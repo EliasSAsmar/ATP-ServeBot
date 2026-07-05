@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getApi, GlbExpiredError } from "../api";
 import { GlbViewer } from "../components/GlbViewer";
 import { MetricCard } from "../components/MetricCard";
+import { Cursor, Panel, TermWindow } from "../components/Terminal";
 import { TipList } from "../components/TipCard";
 import type { Settings } from "../config";
 import type { JobResponse } from "../types/api";
@@ -92,15 +93,23 @@ export function ResultScreen({
     void loadMesh();
   }, [loadMesh]);
 
+  const serveCtx = `~/serves/${currentJob.job_id.slice(0, 12)}`;
+
   if (!result) {
     return (
-      <div className="screen result-screen">
-        <div className="card">
-          <p className="error-note">No result payload on this job.</p>
-          <button className="btn btn-primary" onClick={onNewServe}>
-            New serve
-          </button>
-        </div>
+      <div className="stage result-screen">
+        <TermWindow context={serveCtx} className="result-win">
+          <Panel label="error" className="panel-error" ariaLabel="Result error">
+            <p className="error-note">No result payload on this job.</p>
+          </Panel>
+          <div className="actions">
+            <span className="ps">$</span>
+            <button className="btn btn-primary" onClick={onNewServe}>
+              New serve
+            </button>
+            <Cursor />
+          </div>
+        </TermWindow>
       </div>
     );
   }
@@ -108,65 +117,112 @@ export function ResultScreen({
   const metric = result.metrics.elbow_angle_deg;
   const uncertain = metric !== null && metric.value !== null && metric.confidence < MIN_TIP_CONFIDENCE;
   const unavailable = metric !== null && metric.value === null;
+  const keyframe = result.keyframes.length > 0 ? result.keyframes[0] : null;
 
   return (
-    <div className="screen result-screen">
-      <div className="viewer-wrap">
-        {meshState === "ready" && glbData ? (
-          <GlbViewer glbData={glbData} />
-        ) : (
-          <div className="viewer-placeholder">
-            {meshState === "error" ? (
-              <>
-                <p className="error-note">Couldn&rsquo;t load the 3D model.</p>
-                <button
-                  className="btn"
-                  onClick={() => {
-                    refreshCount.current = 0;
-                    setMeshState("loading");
-                    void loadMesh();
-                  }}
-                >
-                  Retry
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="spinner" aria-hidden="true" />
-                <p className="muted">
-                  {meshState === "refreshing" ? "Refreshing 3D model…" : "Loading 3D model…"}
-                </p>
-              </>
-            )}
-          </div>
-        )}
-        {/* Product stance: persistent framing chip on every 3D surface. */}
-        <span className="chip chip-framing">AI 3D estimate — single camera</span>
-      </div>
+    <div className="stage result-screen">
+      <TermWindow context={serveCtx} className="result-win">
+        <div className="cmd">
+          <span className="prompt">$</span> servebot analyze <span className="path">serve.webm</span>{" "}
+          <span className="flag">--hand {result.handedness}</span>
+        </div>
+        <div className="log">
+          <span>
+            <span className="ok">✓</span> contact keyframe&nbsp;
+            <span className="val">
+              t={(result.contact.refined_timestamp_ms / 1000).toFixed(2)}s · frame{" "}
+              {result.contact.refined_frame_index}
+            </span>
+          </span>
+          {keyframe ? (
+            <span>
+              <span className="ok">✓</span> mesh reconstructed&nbsp;
+              <span className="val">{keyframe.keypoints_3d.count} keypoints</span>
+            </span>
+          ) : null}
+        </div>
 
-      <div className="result-cards">
+        <Panel label="reconstruction" meta="contact frame" ariaLabel="3D reconstruction">
+          <div className="render">
+            {meshState === "ready" && glbData ? (
+              <GlbViewer glbData={glbData} />
+            ) : (
+              <div className="viewer-placeholder">
+                {meshState === "error" ? (
+                  <>
+                    <p className="error-note">Couldn&rsquo;t load the 3D model.</p>
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        refreshCount.current = 0;
+                        setMeshState("loading");
+                        void loadMesh();
+                      }}
+                    >
+                      Retry
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="spinner" aria-hidden="true" />
+                    <p className="muted">
+                      {meshState === "refreshing" ? "Refreshing 3D model…" : "Loading 3D model…"}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+            {meshState === "ready" && glbData ? (
+              <span className="drag" aria-hidden="true">
+                ⟲ drag to rotate
+              </span>
+            ) : null}
+            {/* Product stance: persistent framing tag on every 3D surface. */}
+            <span className="rtag">
+              <b>AI 3D estimate</b> — single camera
+            </span>
+          </div>
+        </Panel>
+
         {metric !== null ? <MetricCard metric={metric} /> : null}
-        {/* Stubbed (null) metrics are hidden in v1 — UI.md §5.2 recommended option. */}
+        {/* Stubbed (null) metrics stay stubbed — shown as shell vars below. */}
 
         <TipList tips={result.tips} suppressed={uncertain || unavailable} />
         {uncertain ? (
-          <section className="card tip-card tip-neutral">
+          <Panel label="coach" className="coach" ariaLabel="Coaching">
             <p>
-              The AI wasn&rsquo;t confident about your form on this serve — try again with your
-              whole body clearly in frame and good lighting.
+              <span className="arrow">&gt;</span> The AI wasn&rsquo;t confident about your form on
+              this serve — try again with your whole body clearly in frame and good lighting.
             </p>
-          </section>
+          </Panel>
         ) : null}
 
-        <p className="muted small framing-note">
+        <div className="stubs" aria-label="Metrics coming in phase 2">
+          <span>
+            <b>shoulder</b>=—
+          </span>
+          <span>
+            <b>contact_ht</b>=—
+          </span>
+          <span>
+            <b>kinetic_chain</b>=—
+          </span>
+          <span className="p2">[phase 2]</span>
+        </div>
+
+        <div className="actions">
+          <span className="ps">$</span>
+          <button className="btn btn-primary btn-big" onClick={onNewServe}>
+            New serve
+          </button>
+          <Cursor />
+        </div>
+
+        <div className="foot">
           The 3D model and angle are AI estimates inferred from a single camera — use them as
           directional feedback, not as measurements.
-        </p>
-
-        <button className="btn btn-primary btn-big" onClick={onNewServe}>
-          New serve
-        </button>
-      </div>
+        </div>
+      </TermWindow>
     </div>
   );
 }

@@ -23,11 +23,12 @@ export function GlbViewer({ glbData }: { glbData: ArrayBuffer }) {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
 
-    scene.add(new THREE.HemisphereLight(0xdfeaff, 0x2a2620, 1.6));
-    const key = new THREE.DirectionalLight(0xffffff, 2.2);
+    // Phosphor-green scene feel to match the terminal theme (visual only).
+    scene.add(new THREE.HemisphereLight(0xd8f2e4, 0x11201a, 1.6));
+    const key = new THREE.DirectionalLight(0xeafff3, 2.2);
     key.position.set(2, 4, 3);
     scene.add(key);
-    const rim = new THREE.DirectionalLight(0x88aaff, 0.8);
+    const rim = new THREE.DirectionalLight(0x5af29a, 0.9);
     rim.position.set(-3, 2, -2);
     scene.add(rim);
 
@@ -63,10 +64,10 @@ export function GlbViewer({ glbData }: { glbData: ArrayBuffer }) {
         controls.maxDistance = fitDist * 3;
         controls.update();
 
-        // Subtle ground disc under the feet for spatial grounding.
+        // Subtle phosphor ground disc under the feet for spatial grounding.
         const groundMesh = new THREE.Mesh(
           new THREE.CircleGeometry(sphere.radius * 1.2, 48),
-          new THREE.MeshBasicMaterial({ color: 0x2f4f46, transparent: true, opacity: 0.35 }),
+          new THREE.MeshBasicMaterial({ color: 0x2e8a5a, transparent: true, opacity: 0.28 }),
         );
         groundMesh.rotation.x = -Math.PI / 2;
         groundMesh.position.y = box.min.y + 0.001;

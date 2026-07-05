@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CloudStatusChip } from "../components/CloudStatusChip";
+import { Cursor, Panel, TermWindow } from "../components/Terminal";
 import type { Settings } from "../config";
 import { useHealth } from "../hooks/useHealth";
 import type { Handedness } from "../types/api";
@@ -68,23 +69,38 @@ export function SetupScreen({
   }, [requestCamera]);
 
   return (
-    <div className="screen setup-screen">
-      <header className="setup-header">
-        <h1>ServeBot</h1>
-        <p className="muted">
-          Live skeleton on your serve, then an AI-estimated 3D look at your contact moment —
-          inferred from a single camera, built for directional feedback.
-        </p>
-      </header>
+    <div className="stage setup-screen">
+      <TermWindow context="~/init">
+        <div>
+          <div className="cmd">
+            <span className="prompt">$</span> servebot init
+          </div>
+          <p className="intro small">
+            Live skeleton on your serve, then an AI-estimated 3D look at your contact moment —
+            inferred from a single camera, built for directional feedback.
+          </p>
+        </div>
 
-      <section className="card">
-        <h3>1 &middot; Camera</h3>
-        {camera === "granted" ? (
-          <p className="ok-note">Camera ready.</p>
-        ) : camera === "requesting" || camera === "idle" ? (
-          <p className="muted">Requesting camera permission…</p>
-        ) : (
-          <>
+        <div className="log" role="status" aria-label="Camera check">
+          {camera === "granted" ? (
+            <span>
+              <span className="ok">✓</span> camera <span className="val">Camera ready.</span>
+            </span>
+          ) : camera === "requesting" || camera === "idle" ? (
+            <span>
+              <span className="run">▸</span> camera{" "}
+              <span className="val">Requesting camera permission…</span> <Cursor />
+            </span>
+          ) : (
+            <span>
+              <span className="err">✗</span> camera{" "}
+              <span className="err">{camera === "denied" ? "permission_denied" : "unavailable"}</span>
+            </span>
+          )}
+        </div>
+
+        {camera === "denied" || camera === "unavailable" ? (
+          <Panel label="camera" className="panel-error" ariaLabel="Camera error">
             <p className="error-note">{cameraError}</p>
             {camera === "denied" ? (
               <ol className="muted small">
@@ -93,51 +109,63 @@ export function SetupScreen({
                 <li>Retry below.</li>
               </ol>
             ) : null}
-            <button className="btn" onClick={() => void requestCamera()}>
-              Retry camera
-            </button>
-          </>
-        )}
-      </section>
-
-      <section className="card">
-        <h3>2 &middot; Which arm do you serve with?</h3>
-        <div className="handedness-row" role="radiogroup" aria-label="Handedness">
-          {(["right", "left"] as Handedness[]).map((h) => (
-            <button
-              key={h}
-              role="radio"
-              aria-checked={settings.handedness === h}
-              className={`btn btn-toggle ${settings.handedness === h ? "btn-active" : ""}`}
-              onClick={() => onSettingsChange({ handedness: h })}
-            >
-              {h === "right" ? "Right-handed" : "Left-handed"}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="card">
-        <h3>3 &middot; Cloud analysis</h3>
-        <div className="row-between">
-          <CloudStatusChip status={health.status} mock={settings.mockApi} />
-          <button className="btn btn-ghost" onClick={onOpenSettings}>
-            Settings
-          </button>
-        </div>
-        {health.status === "offline" ? (
-          <p className="muted small">
-            Live tracking and capture still work — only the post-serve 3D analysis needs the cloud.
-          </p>
+            <div>
+              <button className="btn" onClick={() => void requestCamera()}>
+                Retry camera
+              </button>
+            </div>
+          </Panel>
         ) : null}
-      </section>
 
-      <button className="btn btn-primary btn-big" onClick={onContinue} disabled={camera !== "granted"}>
-        Continue to live view
-      </button>
-      {camera !== "granted" ? (
-        <p className="muted small center">Camera permission is required for the live view.</p>
-      ) : null}
+        <Panel label="handedness" meta="required">
+          <p className="muted small" style={{ marginTop: 0 }}>
+            Which arm do you serve with?
+          </p>
+          <div className="handedness-row" role="radiogroup" aria-label="Handedness">
+            {(["right", "left"] as Handedness[]).map((h) => (
+              <button
+                key={h}
+                role="radio"
+                aria-checked={settings.handedness === h}
+                className={`btn btn-toggle ${settings.handedness === h ? "btn-active" : ""}`}
+                onClick={() => onSettingsChange({ handedness: h })}
+              >
+                {h === "right" ? "Right-handed" : "Left-handed"}
+              </button>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel label="cloud" meta="GET /v1/health" ariaLabel="Cloud analysis">
+          <div className="row-between">
+            <CloudStatusChip status={health.status} mock={settings.mockApi} />
+            <button className="btn btn-ghost" onClick={onOpenSettings}>
+              Settings
+            </button>
+          </div>
+          {health.status === "offline" ? (
+            <p className="muted small">
+              Live tracking and capture still work — only the post-serve 3D analysis needs the
+              cloud.
+            </p>
+          ) : null}
+        </Panel>
+
+        <div className="actions">
+          <span className="ps">$</span>
+          <button
+            className="btn btn-primary btn-big"
+            onClick={onContinue}
+            disabled={camera !== "granted"}
+          >
+            Continue to live view
+          </button>
+          <Cursor />
+        </div>
+        {camera !== "granted" ? (
+          <div className="foot">Camera permission is required for the live view.</div>
+        ) : null}
+      </TermWindow>
     </div>
   );
 }
