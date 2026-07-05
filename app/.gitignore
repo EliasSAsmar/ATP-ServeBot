@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env.local
+.env.*.local
+# copied/downloaded at install time (see scripts/)
+public/mediapipe/
+public/models/
