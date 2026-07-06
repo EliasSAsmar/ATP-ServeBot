@@ -657,9 +657,132 @@ ol {
   gap: 0.75rem;
   flex-wrap: wrap;
 }
+.controls-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
 .mode-toggle {
   display: flex;
   gap: 0.4rem;
+}
+
+/* ---------- practice session strip + list ---------- */
+
+.practice-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  padding: 6px 10px;
+}
+.practice-strip .strip-label {
+  color: var(--green);
+  text-shadow: 0 0 8px var(--glow);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  margin-right: 4px;
+}
+.practice-strip .spacer {
+  flex: 1;
+}
+.practice-strip .ok {
+  color: var(--green);
+}
+.practice-strip .run {
+  color: var(--amber);
+}
+.practice-strip .err {
+  color: var(--red);
+}
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  border-bottom: 1px dashed var(--border);
+  padding: 3px 0 6px;
+}
+.session-row:last-child {
+  border-bottom: none;
+}
+.session-seq {
+  color: var(--green);
+  width: 2.6rem;
+  flex: none;
+}
+.session-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.session-sport {
+  color: var(--cyan);
+  flex: none;
+  width: 3.6rem;
+}
+.session-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-status.ok {
+  color: var(--green);
+}
+.session-status.run {
+  color: var(--amber);
+}
+.session-status.err {
+  color: var(--red);
+}
+.session-status.muted {
+  color: var(--dim);
+}
+.session-metric {
+  color: var(--text);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.session-open {
+  flex: none;
+  width: 3.6rem;
+  text-align: right;
+}
+
+/* ---------- camera zoom (HUD) ---------- */
+
+.zoom-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--dim);
+}
+.zoom-slider {
+  width: 90px;
+  accent-color: var(--green);
+}
+.zoom-val {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.6rem;
 }
 .btn-capture {
   font-weight: 700;

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { getApi } from "../api";
 import { ClipRecorder } from "../capture/clipRecorder";
 import { CloudStatusChip } from "../components/CloudStatusChip";
 import { Panel, TermWindow } from "../components/Terminal";
@@ -6,6 +7,7 @@ import type { Settings } from "../config";
 import { GOLF_DETECTOR_VERSION, GolfSwingDetector } from "../detect/golfSwingDetector";
 import { DETECTOR_VERSION, ServeDetector, type ServeDetection } from "../detect/serveDetector";
 import type { CapturedClip } from "../flow/analysis";
+import { practiceQueue, summarize } from "../flow/practiceQueue";
 import { useHealth } from "../hooks/useHealth";
 import { PoseEngine } from "../pose/poseEngine";
 import { drawSkeleton } from "../pose/skeletonDraw";
@@ -34,11 +36,13 @@ export function LiveScreen({
   onSettingsChange,
   onCaptured,
   onOpenSettings,
+  onOpenSession,
 }: {
   settings: Settings;
   onSettingsChange: (patch: Partial<Settings>) => void;
   onCaptured: (clip: CapturedClip) => void;
   onOpenSettings: () => void;
+  onOpenSession: () => void;
 }) {
   const health = useHealth(settings);
   const [liveState, setLiveState] = useState<LiveState>("initializing");
@@ -50,6 +54,17 @@ export function LiveScreen({
   const [capturing, setCapturing] = useState(false);
   const [restartKey, setRestartKey] = useState(0);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  /** Zoom capability of the active track (e.g. iPhone 0.5× ultrawide); null = unsupported. */
+  const [zoomRange, setZoomRange] = useState<{ min: number; max: number; step: number } | null>(
+    null,
+  );
+  /** Practice mode: every capture is queued for background analysis; the
+   *  player keeps hitting instead of bouncing through the analyzing screen. */
+  const [practice, setPractice] = useState(false);
+  const practiceRef = useRef(practice);
+  practiceRef.current = practice;
+  const queueItems = useSyncExternalStore(practiceQueue.subscribe, practiceQueue.getSnapshot);
+  const q = summarize(queueItems);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -64,6 +79,10 @@ export function LiveScreen({
   const onCapturedRef = useRef(onCaptured);
   onCapturedRef.current = onCaptured;
   captureModeRef.current = captureMode;
+  // Latest settings without retriggering the camera-init effect (zoom /
+  // practice toggles must not restart the stream).
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   // Golf uses its own swing detector (the serve heuristic is overhead-reach
   // specific). Ref so the rAF loop sees sport switches live.
@@ -113,16 +132,26 @@ export function LiveScreen({
           capturedAt: Date.now(),
           source,
         };
+        const s = settingsRef.current;
         // Step-1 acceptance: clip blob + metadata logged/inspectable.
         console.info("[serve-capture] clip ready", {
           ...meta,
           byte_size: capture.blob.size,
           contact_timestamp_ms: clip.contactTimestampMs,
-          handedness: settings.handedness,
+          handedness: s.handedness,
           source,
+          practice: practiceRef.current,
           edge_detect: clip.edgeDetect ?? null,
         });
-        onCapturedRef.current(clip);
+        if (practiceRef.current) {
+          // Practice: queue for background analysis, stay on the live view.
+          practiceQueue.setContext(getApi(s), s.handedness, s.sport);
+          if (!practiceQueue.enqueue(clip, s.sport)) {
+            console.warn("[practice] queue full — capture dropped");
+          }
+        } else {
+          onCapturedRef.current(clip);
+        }
       } catch (e) {
         console.error("[serve-capture] failed to finalize clip", e);
       } finally {
@@ -131,7 +160,7 @@ export function LiveScreen({
         setFlash(false);
       }
     },
-    [settings.handedness],
+    [],
   );
 
   // Camera + pose + recorder lifecycle.
@@ -190,6 +219,31 @@ export function LiveScreen({
         if (!cancelled) setCameras(devs.filter((d) => d.kind === "videoinput"));
       } catch {
         // enumeration unsupported — picker just stays at "default"
+      }
+
+      // Optical/sensor zoom, when the camera exposes it (an iPhone via
+      // Continuity Camera can go below 1× onto the ultrawide lens). Applied
+      // on the track, so preview, pose, and the recorded clip all match.
+      {
+        const track = stream.getVideoTracks()[0];
+        const caps = (track?.getCapabilities?.() ?? {}) as {
+          zoom?: { min: number; max: number; step?: number };
+        };
+        if (!cancelled && caps.zoom && typeof caps.zoom.min === "number") {
+          setZoomRange({
+            min: caps.zoom.min,
+            max: caps.zoom.max,
+            step: caps.zoom.step || 0.1,
+          });
+          const desired = settingsRef.current.cameraZoom;
+          if (desired && desired >= caps.zoom.min && desired <= caps.zoom.max) {
+            track
+              .applyConstraints({ advanced: [{ zoom: desired } as MediaTrackConstraintSet] })
+              .catch(() => undefined);
+          }
+        } else if (!cancelled) {
+          setZoomRange(null);
+        }
       }
 
       // Ring buffer starts immediately — the buffer is always rolling.
@@ -297,6 +351,17 @@ export function LiveScreen({
     void finalizeCapture(contact, "manual", null);
   }, [finalizeCapture]);
 
+  const applyZoom = useCallback(
+    (z: number) => {
+      streamRef.current
+        ?.getVideoTracks()[0]
+        ?.applyConstraints({ advanced: [{ zoom: z } as MediaTrackConstraintSet] })
+        .catch(() => undefined);
+      onSettingsChange({ cameraZoom: z });
+    },
+    [onSettingsChange],
+  );
+
   const blocking = liveState === "permission_denied" || liveState === "camera_error";
 
   const detectorArmed =
@@ -331,6 +396,25 @@ export function LiveScreen({
               ))}
             </select>
           </label>
+          {zoomRange ? (
+            <label
+              className="zoom-wrap"
+              title="Camera zoom — go below 1× for the iPhone ultrawide lens"
+            >
+              <span aria-hidden="true">zoom=</span>
+              <input
+                type="range"
+                className="zoom-slider"
+                min={zoomRange.min}
+                max={zoomRange.max}
+                step={zoomRange.step}
+                value={settings.cameraZoom || 1}
+                onChange={(e) => applyZoom(Number(e.target.value))}
+                aria-label="Camera zoom"
+              />
+              <span className="zoom-val">{(settings.cameraZoom || 1).toFixed(1)}×</span>
+            </label>
+          ) : null}
           <span>hand={settings.handedness}</span>
           <CloudStatusChip status={health.status} mock={settings.mockApi} compact />
           <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} aria-label="Settings">
@@ -363,7 +447,7 @@ export function LiveScreen({
 
           {flash ? (
             <div className="capture-flash" role="status">
-              <span>✓ Captured!</span>
+              <span>✓ {practice ? "Queued!" : "Captured!"}</span>
             </div>
           ) : null}
 
@@ -382,8 +466,24 @@ export function LiveScreen({
           ) : null}
         </div>
 
+        {(practice || q.total > 0) && !blocking ? (
+          <div className="practice-strip" role="status" aria-label="Practice session">
+            <span className="strip-label">session</span>
+            <span>{q.total} captured</span>
+            {q.waiting > 0 ? <span className="muted">· {q.waiting} waiting</span> : null}
+            {q.active > 0 ? <span className="run">· analyzing…</span> : null}
+            <span className="ok">· {q.done} done</span>
+            {q.failed > 0 ? <span className="err">· {q.failed} failed</span> : null}
+            <span className="spacer" />
+            <button className="btn btn-ghost" onClick={onOpenSession}>
+              results →
+            </button>
+          </div>
+        ) : null}
+
         {!blocking ? (
           <div className="live-controls">
+            <div className="controls-left">
             <div className="mode-toggle" role="radiogroup" aria-label="Capture mode">
               <button
                 role="radio"
@@ -404,6 +504,16 @@ export function LiveScreen({
                 Manual
               </button>
             </div>
+            <button
+              role="switch"
+              aria-checked={practice}
+              className={`btn btn-toggle ${practice ? "btn-active" : ""}`}
+              onClick={() => setPractice((p) => !p)}
+              title="Queue every capture and keep hitting — analysis runs in the background"
+            >
+              Practice
+            </button>
+            </div>
 
             <button
               className="btn btn-primary btn-capture"
@@ -421,6 +531,7 @@ export function LiveScreen({
             {golf
               ? "Swing away — it captures automatically at impact."
               : "Serve naturally — the app detects it automatically."}
+            {practice ? " Captures queue up in the background — just keep hitting." : ""}
           </div>
         ) : null}
         {golf && !detectorArmed && !blocking ? (

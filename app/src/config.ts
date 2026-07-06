@@ -22,6 +22,9 @@ export interface Settings {
   /** Selected camera deviceId ("" = browser default). Enables picking an
    *  external camera such as an iPhone via Continuity Camera. */
   cameraDeviceId: string;
+  /** Camera zoom factor (0 = camera default). Only applied when the active
+   *  track exposes a zoom capability — e.g. an iPhone's 0.5× ultrawide. */
+  cameraZoom: number;
 }
 
 const STORAGE_KEY = "servebot.settings.v1";
@@ -36,6 +39,7 @@ export const ENV_DEFAULTS: Settings = {
       ? import.meta.env.VITE_MOCK_API === "true"
       : true,
   cameraDeviceId: "",
+  cameraZoom: 0,
 };
 
 export function loadSettings(): Settings {
@@ -50,6 +54,10 @@ export function loadSettings(): Settings {
       apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : ENV_DEFAULTS.apiKey,
       mockApi: typeof parsed.mockApi === "boolean" ? parsed.mockApi : ENV_DEFAULTS.mockApi,
       cameraDeviceId: typeof parsed.cameraDeviceId === "string" ? parsed.cameraDeviceId : "",
+      cameraZoom:
+        typeof parsed.cameraZoom === "number" && Number.isFinite(parsed.cameraZoom)
+          ? parsed.cameraZoom
+          : 0,
     };
   } catch {
     return { ...ENV_DEFAULTS };

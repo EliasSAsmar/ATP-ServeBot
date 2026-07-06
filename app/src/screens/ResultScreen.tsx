@@ -29,10 +29,13 @@ export function ResultScreen({
   settings,
   job,
   onNewServe,
+  backLabel,
 }: {
   settings: Settings;
   job: JobResponse;
   onNewServe: () => void;
+  /** Overrides the "New serve/swing" button label (e.g. "Back to session"). */
+  backLabel?: string;
 }) {
   const [currentJob, setCurrentJob] = useState(job);
   const [meshState, setMeshState] = useState<MeshState>("loading");
@@ -102,7 +105,7 @@ export function ResultScreen({
 
   const golf = settings.sport === "golf";
   const serveCtx = `~/${golf ? "swings" : "serves"}/${currentJob.job_id.slice(0, 12)}`;
-  const newLabel = golf ? "New swing" : "New serve";
+  const newLabel = backLabel ?? (golf ? "New swing" : "New serve");
 
   if (!result) {
     return (

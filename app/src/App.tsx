@@ -4,6 +4,7 @@ import type { CapturedClip } from "./flow/analysis";
 import { AnalyzingScreen } from "./screens/AnalyzingScreen";
 import { LiveScreen } from "./screens/LiveScreen";
 import { ResultScreen } from "./screens/ResultScreen";
+import { SessionScreen } from "./screens/SessionScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { SetupScreen } from "./screens/SetupScreen";
 import type { JobResponse, Sport } from "./types/api";
@@ -17,7 +18,8 @@ type Screen =
   | { name: "setup" }
   | { name: "live" }
   | { name: "analyzing"; clip: CapturedClip }
-  | { name: "result"; job: JobResponse }
+  | { name: "result"; job: JobResponse; from?: "live" | "session" }
+  | { name: "session" }
   | { name: "settings"; from: "setup" | "live" };
 
 const SPORTS: Sport[] = ["tennis", "golf"];
@@ -78,6 +80,7 @@ export default function App() {
           onSettingsChange={updateSettings}
           onCaptured={(clip) => setScreen({ name: "analyzing", clip })}
           onOpenSettings={() => setScreen({ name: "settings", from: "live" })}
+          onOpenSession={() => setScreen({ name: "session" })}
         />,
       );
     case "analyzing":
@@ -94,7 +97,18 @@ export default function App() {
         <ResultScreen
           settings={settings}
           job={screen.job}
-          onNewServe={() => setScreen({ name: "live" })}
+          onNewServe={() =>
+            setScreen(screen.from === "session" ? { name: "session" } : { name: "live" })
+          }
+          backLabel={screen.from === "session" ? "Back to session" : undefined}
+        />
+      );
+    case "session":
+      return (
+        <SessionScreen
+          settings={settings}
+          onOpenResult={(job) => setScreen({ name: "result", job, from: "session" })}
+          onBackToLive={() => setScreen({ name: "live" })}
         />
       );
     case "settings":
