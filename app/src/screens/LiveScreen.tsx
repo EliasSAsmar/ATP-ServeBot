@@ -30,10 +30,12 @@ const NO_POSE_HIDE_FRAMES = 25; // debounce before showing the "step back" hint
 
 export function LiveScreen({
   settings,
+  onSettingsChange,
   onCaptured,
   onOpenSettings,
 }: {
   settings: Settings;
+  onSettingsChange: (patch: Partial<Settings>) => void;
   onCaptured: (clip: CapturedClip) => void;
   onOpenSettings: () => void;
 }) {
@@ -46,6 +48,7 @@ export function LiveScreen({
   const [flash, setFlash] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [restartKey, setRestartKey] = useState(0);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -137,15 +140,23 @@ export function LiveScreen({
         return;
       }
 
+      // Use the chosen camera if set (e.g. an iPhone via Continuity Camera),
+      // otherwise the browser default front camera.
+      const videoConstraints: MediaTrackConstraints = settings.cameraDeviceId
+        ? { deviceId: { exact: settings.cameraDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        : { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } };
+
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
       } catch (e) {
         if (cancelled) return;
         const err = e as DOMException;
+        if (err?.name === "OverconstrainedError" && settings.cameraDeviceId) {
+          // Chosen camera vanished (e.g. iPhone disconnected) — fall back to default.
+          onSettingsChange({ cameraDeviceId: "" });
+          return;
+        }
         if (err?.name === "NotAllowedError" || err?.name === "SecurityError") {
           setLiveState("permission_denied");
           setCameraMessage("Camera access was denied. Allow it in your browser settings, then retry.");
@@ -163,6 +174,15 @@ export function LiveScreen({
       const video = videoRef.current!;
       video.srcObject = stream;
       await video.play().catch(() => undefined);
+
+      // Device labels are only exposed after permission is granted, so we
+      // enumerate here (populates the camera picker, incl. an iPhone).
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        if (!cancelled) setCameras(devs.filter((d) => d.kind === "videoinput"));
+      } catch {
+        // enumeration unsupported — picker just stays at "default"
+      }
 
       // Ring buffer starts immediately — the buffer is always rolling.
       if (ClipRecorder.isSupported()) {
@@ -239,7 +259,21 @@ export function LiveScreen({
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [restartKey, finalizeCapture]);
+  }, [restartKey, finalizeCapture, settings.cameraDeviceId, onSettingsChange]);
+
+  // Keep the camera list fresh so a newly-connected iPhone (Continuity Camera)
+  // shows up in the picker without a reload.
+  useEffect(() => {
+    const md = navigator.mediaDevices;
+    if (!md?.addEventListener) return;
+    const refresh = () =>
+      md
+        .enumerateDevices()
+        .then((ds) => setCameras(ds.filter((d) => d.kind === "videoinput")))
+        .catch(() => undefined);
+    md.addEventListener("devicechange", refresh);
+    return () => md.removeEventListener("devicechange", refresh);
+  }, []);
 
   const manualCapture = useCallback(() => {
     if (capturingRef.current || !recorderRef.current) return;
@@ -269,6 +303,22 @@ export function LiveScreen({
           </span>
           <span aria-hidden="true">detector: {detectorArmed ? "armed" : "off"}</span>
           <span className="spacer" />
+          <label className="cam-select-wrap" title="Camera source (pick your iPhone via Continuity Camera)">
+            <span aria-hidden="true">cam=</span>
+            <select
+              className="cam-select"
+              value={settings.cameraDeviceId}
+              onChange={(e) => onSettingsChange({ cameraDeviceId: e.target.value })}
+              aria-label="Camera source"
+            >
+              <option value="">default</option>
+              {cameras.map((d, i) => (
+                <option key={d.deviceId || i} value={d.deviceId}>
+                  {d.label || `camera ${i + 1}`}
+                </option>
+              ))}
+            </select>
+          </label>
           <span>hand={settings.handedness}</span>
           <CloudStatusChip status={health.status} mock={settings.mockApi} compact />
           <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} aria-label="Settings">

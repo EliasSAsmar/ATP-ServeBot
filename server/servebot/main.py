@@ -47,7 +47,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
     storage = build_storage(settings)
-    pipeline = StubAnalysisPipeline(storage=storage, settings=settings)
+    if settings.pipeline == "sam3d":
+        # Real SAM 3D Body pipeline (Milestone Step 4). Imported lazily so the
+        # base app never touches torch; loads the model eagerly and RAISES on
+        # any load/MPS failure — no silent fallback to the stub.
+        from .pipeline_sam3d import Sam3DAnalysisPipeline
+
+        pipeline = Sam3DAnalysisPipeline(storage=storage, settings=settings)
+    elif settings.pipeline == "stub":
+        pipeline = StubAnalysisPipeline(storage=storage, settings=settings)
+    else:
+        raise RuntimeError(
+            f"Unknown SERVEBOT_PIPELINE={settings.pipeline!r}; expected 'stub' or 'sam3d'."
+        )
     job_store = JobStore()
     worker = Worker(job_store, pipeline, settings)
 

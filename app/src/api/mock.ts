@@ -1,4 +1,5 @@
 import type {
+  BallTrackPoint,
   CreateServeRequest,
   CreateServeResponse,
   ElbowBand,
@@ -6,7 +7,9 @@ import type {
   JobResponse,
   JobStage,
   Keypoint3D,
+  RacketTrackPoint,
   ServeResult,
+  ServeTracking,
   Tip,
   UploadRequest,
   UploadResponse,
@@ -143,6 +146,52 @@ function buildKeypoints(handedness: "right" | "left"): Keypoint3D[] {
   return points;
 }
 
+// --- phase-2 canned tracking --------------------------------------------------
+// A physically self-consistent toss/contact set (units really line up):
+// release ~1.75 m at contact−530 ms, apex 2.61 m at contact−110 ms (parabola
+// h = apex − 4.9·Δt²), ball contact at ~2.55 m. Pixel coords use a canned
+// scale of 212 px/m with the ground at y=700 px.
+const PX_PER_M = 212;
+const GROUND_Y_PX = 700;
+const APEX_H_M = 2.61;
+const CONTACT_H_M = 2.55;
+
+function buildTracking(contactMs: number): ServeTracking {
+  const apexT = contactMs - 110;
+  const releaseT = contactMs - 530;
+  const h = (t: number) => APEX_H_M - 4.9 * ((t - apexT) / 1000) ** 2;
+  const yPx = (hm: number) => Math.round(GROUND_Y_PX - hm * PX_PER_M);
+
+  const points: BallTrackPoint[] = [];
+  // ball still in the tossing hand, rising
+  for (let i = 0; i < 4; i++) {
+    const t = releaseT - 240 + i * 60;
+    const frac = i / 4;
+    points.push({ t_ms: Math.round(t), x: Math.round(288 + 8 * frac), y: yPx(1.1 + 0.62 * frac), in_flight: false });
+  }
+  // free flight: release → contact, drifting ~31 cm forward over the toss
+  const flightMs = contactMs - releaseT;
+  const steps = Math.max(2, Math.round(flightMs / 33));
+  for (let i = 0; i <= steps; i++) {
+    const t = releaseT + (flightMs * i) / steps;
+    const prog = (t - releaseT) / flightMs;
+    points.push({ t_ms: Math.round(t), x: Math.round(296 + prog * 66), y: yPx(h(t)), in_flight: true });
+  }
+
+  const racket: RacketTrackPoint[] = [];
+  for (let i = 0; i < 10; i++) {
+    const t = contactMs - 200 + i * 26;
+    racket.push({ t_ms: Math.round(t), x: Math.round(298 + i * 6), y: yPx(0.95 + i * 0.185) });
+  }
+
+  return {
+    ball: { points, apex: { t_ms: Math.round(apexT), height_m: APEX_H_M } },
+    racket: { peak_speed_m_s: 18.6, points: racket },
+    contact: { t_ms: Math.round(contactMs), height_m: CONTACT_H_M },
+    scale: { px_per_m: PX_PER_M, method: "standing_height_prior" },
+  };
+}
+
 function buildResult(req: CreateServeRequest, nowMs: number): ServeResult {
   const points = buildKeypoints(req.handedness);
   const side = req.handedness;
@@ -196,14 +245,58 @@ function buildResult(req: CreateServeRequest, nowMs: number): ServeResult {
         band: elbowBand(value),
         reference_range_deg: [150.0, 180.0],
       },
-      shoulder_angle_deg: null,
-      knee_flexion_deg: null,
-      kinetic_chain_sequence: null,
-      toss_placement: null,
+      // Phase-2 metrics: canned but schema-valid, and mutually consistent
+      // (contact_height ratio = wrist_y_m / standing_height_m; kinetic-chain
+      // peaks lead the refined contact time; toss numbers match tracking).
+      shoulder_angle_deg: {
+        value: 155.4,
+        unit: "degree",
+        side,
+        band: "well_elevated",
+        confidence: 0.82,
+        reference_range_deg: [150.0, 180.0],
+      },
+      knee_flexion_deg: {
+        value: 41.3,
+        unit: "degree",
+        side,
+        band: "good_bend",
+        confidence: 0.71,
+      },
+      contact_height: {
+        value: 1.4, // 2.58 / 1.84
+        unit: "ratio",
+        wrist_y_m: 2.58,
+        standing_height_m: 1.84,
+      },
+      phase_timing: {
+        unit: "ms",
+        contact_ms: refinedTs,
+        phases: { windup: 780, trophy: 540, acceleration: 170, follow_through: 260 },
+      },
+      kinetic_chain_sequence: {
+        segments: ["pelvis", "trunk", "upper_arm", "forearm", "hand"],
+        peak_times_ms: {
+          pelvis: refinedTs - 165,
+          trunk: refinedTs - 118,
+          upper_arm: refinedTs - 64,
+          forearm: refinedTs - 30,
+          hand: refinedTs - 9,
+        },
+        peak_deg_s: { pelvis: 438, trunk: 642, upper_arm: 1130, forearm: 1580, hand: 2240 },
+        order_correct: true,
+        gaps_ms: [47, 54, 34, 21],
+        note: "single-camera 2D velocity estimate — peak order is directional, not exact",
+      },
+      toss_placement: {
+        offset_forward_cm: 25, // apex forward drift in buildTracking: 52 px ≈ 0.25 m
+        offset_lateral_cm: 4,
+        apex_height_m: APEX_H_M,
+        reference: "front_foot_toe",
+      },
       toss_consistency: null,
-      contact_height: null,
-      phase_timing: null,
     },
+    tracking: buildTracking(refinedTs),
     tips: confidence >= 0.5 && value !== null ? [elbowTip(value)] : [],
     diagnostics: {
       frames_decoded: Math.round((req.clip.duration_ms / 1000) * fps),

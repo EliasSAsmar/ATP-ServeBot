@@ -60,6 +60,14 @@ async def health(request: Request) -> HealthResponse:
     app = request.app
     pipeline = app.state.pipeline
     info = pipeline.model_info()
+    # Real pipelines expose gpu_info() (e.g. sam3d reports the MPS device);
+    # the stub has no accelerator, so report a truthful placeholder.
+    gpu_fn = getattr(pipeline, "gpu_info", None)
+    gpu = (
+        GpuInfo(**gpu_fn())
+        if callable(gpu_fn)
+        else GpuInfo(name="none (local dev stub)", vram_total_mb=0, vram_used_mb=0)
+    )
     return HealthResponse(
         status="ok" if pipeline.ready else "starting",
         instance_up=True,
@@ -68,9 +76,7 @@ async def health(request: Request) -> HealthResponse:
             sam3=ModelStatus(**info["sam3"]),
             sam3d_body=ModelStatus(**info["sam3d_body"]),
         ),
-        # No GPU on the local-dev box; truthful placeholder until the real
-        # pipeline (which reads nvidia-smi/torch) lands.
-        gpu=GpuInfo(name="none (local dev stub)", vram_total_mb=0, vram_used_mb=0),
+        gpu=gpu,
         queue_depth=app.state.worker.queue_depth,
         server_time=now_utc(),
     )

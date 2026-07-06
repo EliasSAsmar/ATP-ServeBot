@@ -308,13 +308,61 @@ Closed enum, monotonic, for progress UI:
         "band": "slightly_bent",
         "reference_range_deg": [150.0, 180.0]
       },
-      "shoulder_angle_deg": null,
-      "knee_flexion_deg": null,
-      "kinetic_chain_sequence": null,
-      "toss_placement": null,
+      "shoulder_angle_deg": {
+        "value": 112.4,
+        "unit": "degree",
+        "side": "right",
+        "band": "good",
+        "confidence": 1.0,
+        "reference_range_deg": [90.0, 140.0]
+      },
+      "knee_flexion_deg": {
+        "value": 121.0,
+        "unit": "degree",
+        "side": "left",
+        "band": "moderate",
+        "confidence": 1.0
+      },
+      "kinetic_chain_sequence": {
+        "segments": ["pelvis", "trunk", "upper_arm", "forearm"],
+        "peak_times_ms": { "pelvis": 900, "trunk": 950, "upper_arm": 1000, "forearm": 1060 },
+        "peak_deg_s": { "pelvis": 310.0, "trunk": 420.5, "upper_arm": 800.1, "forearm": 1400.0 },
+        "order_correct": true,
+        "gaps_ms": [50, 50, 60],
+        "note": "Timing from dense 2D pose (single camera). Pelvis/trunk rotate mostly about the view axis, so their peak times are noisy proxies — treat ordering as indicative, not diagnostic."
+      },
+      "toss_placement": {
+        "offset_forward_cm": 24.0,
+        "offset_lateral_cm": null,
+        "apex_height_m": 2.64,
+        "reference": "body_center"
+      },
       "toss_consistency": null,
-      "contact_height": null,
-      "phase_timing": null
+      "contact_height": {
+        "value": 1.42,
+        "unit": "ratio",
+        "wrist_y_m": 2.51,
+        "standing_height_m": 1.77
+      },
+      "phase_timing": {
+        "unit": "ms",
+        "contact_ms": 1000,
+        "phases": { "windup": 480, "trophy": 320, "acceleration": 160, "follow_through": 300 }
+      }
+    },
+    "tracking": {
+      "ball": {
+        "points": [
+          { "t_ms": 400, "x": 512.0, "y": 300.5, "in_flight": true }
+        ],
+        "apex": { "t_ms": 860, "height_m": 2.64 }
+      },
+      "racket": {
+        "peak_speed_m_s": 42.9,
+        "points": [ { "t_ms": 400, "x": 400.0, "y": 500.0 } ]
+      },
+      "contact": { "t_ms": 1000, "height_m": 2.59 },
+      "scale": { "px_per_m": 138.9, "method": "gravity_fit" }
     },
     "tips": [
       {
@@ -361,13 +409,20 @@ Closed enum, monotonic, for progress UI:
 | `contact.edge_timestamp_ms` | int | What the client sent. |
 | `contact.refined_timestamp_ms` | int | Cloud-refined contact. May equal edge value. |
 | `contact.refined_frame_index` | int | Index into decoded frames. |
-| `contact.contact_confidence` | number [0,1] | Cloud's confidence in the contact estimate (pose-derived; racket/ball not tracked). |
+| `contact.contact_confidence` | number [0,1] | Cloud's confidence in the contact estimate. Phase-2: ball-track break validated by racket-ball proximity (0.9/0.6), pose-only fallback 0.6, edge echo otherwise. |
 | `keyframes[]` | array | v1: exactly one, `role="contact"`. Array shape reserved for more keyframes later. |
 | `keyframes[].mesh.glb_url` | string (URL) | **Presigned S3 GET.** Client downloads directly. |
 | `keyframes[].mesh.glb_expires_at` | ISO-8601 | GLB URL expiry (default 15 min). Re-poll to refresh if expired. |
 | `keyframes[].keypoints_3d.points[]` | array | Each: `index` (int, model keypoint index), `name` (string, canonical — see `MODELS.md §skeleton`), `xyz` (`[x,y,z]` meters), `score` [0,1]. **All 70 points are returned**; the example truncates. |
-| `metrics.<name>` | object or `null` | **Implemented metrics are objects; stubbed metrics are `null`.** In v1 only `elbow_angle_deg` is an object. Keys for all planned metrics are present with `null` so the client can render placeholders. |
+| `metrics.<name>` | object or `null` | **Implemented metrics are objects; stubbed metrics are `null`.** Phase-2 (sam3d pipeline): `elbow_angle_deg`, `shoulder_angle_deg`, `knee_flexion_deg`, `contact_height`, `phase_timing`, `kinetic_chain_sequence`, `toss_placement` are objects when their input signal was usable on this clip, `null` otherwise. `toss_consistency` stays `null` (needs multi-serve history). The stub pipeline emits every phase-2 key as `null`. |
 | `metrics.elbow_angle_deg.band` | enum | Qualitative band (see `METRICS.md`). |
+| `metrics.shoulder_angle_deg` | object/null | `{value, unit:"degree", side, band: low\|good\|high, confidence, reference_range_deg}` at contact. |
+| `metrics.knee_flexion_deg` | object/null | `{value, unit:"degree", side, band: deep\|moderate\|shallow, confidence}` — deepest pre-contact bend; `side` = deeper leg. |
+| `metrics.contact_height` | object/null | `{value (ratio), unit:"ratio", wrist_y_m, standing_height_m}`. |
+| `metrics.phase_timing` | object/null | `{unit:"ms", contact_ms (absolute clip ms), phases:{windup,trophy,acceleration,follow_through}}` — each phase value is a **duration** in ms. |
+| `metrics.kinetic_chain_sequence` | object/null | `{segments[], peak_times_ms{seg:int}, peak_deg_s{seg:float}, order_correct, gaps_ms[], note}`. `note` carries the single-camera timing caveat — treat `order_correct` as indicative. |
+| `metrics.toss_placement` | object/null | `{offset_forward_cm, offset_lateral_cm (null from a single side-on camera), apex_height_m, reference:"body_center"}`. |
+| `tracking` | object or `null` | Ball/racket tracking for UI overlays. **`null` whenever tracking didn't run or found no usable toss arc** (stub pipeline: always `null`). `ball.points[]`/`racket.points[]` carry `t_ms` (absolute clip ms) and `x`/`y` in **original clip pixel coordinates**; `ball.points[].in_flight` is true between toss release and contact. `scale.px_per_m` + `scale.method` (`gravity_fit` = fit of the toss free-flight parabola to 9.81 m/s²; `person_height_prior` = fallback). `racket.peak_speed_m_s` is a bbox-center proxy (underestimates racket-head speed). |
 | `tips[]` | array | Zero or more. Empty array = no tip fired (metric in acceptable range). Never `null`. |
 | `tips[].severity` | enum `info\|suggestion\|flag` | v1 uses `info`/`suggestion`. |
 | `diagnostics` | object | Non-user-facing; for debugging/telemetry. Client may ignore. |

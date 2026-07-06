@@ -2,10 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getApi, GlbExpiredError } from "../api";
 import { GlbViewer } from "../components/GlbViewer";
 import { MetricCard } from "../components/MetricCard";
+import {
+  BallTrajectoryPanel,
+  ContactHeightPanel,
+  KineticChainPanel,
+  PhaseTimelinePanel,
+  TossPanel,
+} from "../components/Phase2Panels";
 import { Cursor, Panel, TermWindow } from "../components/Terminal";
 import { TipList } from "../components/TipCard";
 import type { Settings } from "../config";
-import type { JobResponse } from "../types/api";
+import type { JobResponse, ServeMetrics } from "../types/api";
 
 /**
  * Analysis Result — hero #2 (UI.md §5). three.js GLB viewer + elbow metric
@@ -114,10 +121,15 @@ export function ResultScreen({
     );
   }
 
-  const metric = result.metrics.elbow_angle_deg;
+  const m = result.metrics;
+  const metric = m.elbow_angle_deg;
   const uncertain = metric !== null && metric.value !== null && metric.confidence < MIN_TIP_CONFIDENCE;
   const unavailable = metric !== null && metric.value === null;
   const keyframe = result.keyframes.length > 0 ? result.keyframes[0] : null;
+  const tracking = result.tracking ?? null;
+  const contactMs = m.phase_timing?.contact_ms ?? result.contact.refined_timestamp_ms;
+  // Contract §4c: metric key === null → not computed → listed as a stub, never fabricated.
+  const pendingKeys = (Object.keys(m) as (keyof ServeMetrics)[]).filter((k) => m[k] === null);
 
   return (
     <div className="stage result-screen">
@@ -185,7 +197,27 @@ export function ResultScreen({
         </Panel>
 
         {metric !== null ? <MetricCard metric={metric} /> : null}
-        {/* Stubbed (null) metrics stay stubbed — shown as shell vars below. */}
+
+        {/* Phase-2 breakdown — each panel renders only when the backend computed it. */}
+        {m.shoulder_angle_deg !== null ? (
+          <MetricCard metric={m.shoulder_angle_deg} label="shoulder_angle" subject="arm" />
+        ) : null}
+        {m.knee_flexion_deg !== null ? (
+          <MetricCard
+            metric={m.knee_flexion_deg}
+            label="knee_flexion"
+            subject="leg"
+            meta={`${m.knee_flexion_deg.side === "left" ? "left" : "right"} · deepest bend`}
+            maxDeg={90}
+          />
+        ) : null}
+        {m.contact_height !== null ? <ContactHeightPanel metric={m.contact_height} /> : null}
+        {m.phase_timing !== null ? <PhaseTimelinePanel timing={m.phase_timing} /> : null}
+        {m.kinetic_chain_sequence !== null ? (
+          <KineticChainPanel chain={m.kinetic_chain_sequence} contactMs={contactMs} />
+        ) : null}
+        {m.toss_placement !== null ? <TossPanel toss={m.toss_placement} tracking={tracking} /> : null}
+        {tracking !== null ? <BallTrajectoryPanel tracking={tracking} /> : null}
 
         <TipList tips={result.tips} suppressed={uncertain || unavailable} />
         {uncertain ? (
@@ -197,18 +229,16 @@ export function ResultScreen({
           </Panel>
         ) : null}
 
-        <div className="stubs" aria-label="Metrics coming in phase 2">
-          <span>
-            <b>shoulder</b>=—
-          </span>
-          <span>
-            <b>contact_ht</b>=—
-          </span>
-          <span>
-            <b>kinetic_chain</b>=—
-          </span>
-          <span className="p2">[phase 2]</span>
-        </div>
+        {pendingKeys.length > 0 ? (
+          <div className="stubs" aria-label="Metrics not computed for this serve">
+            {pendingKeys.map((k) => (
+              <span key={k}>
+                <b>{k}</b>=—
+              </span>
+            ))}
+            <span className="p2">[coming soon]</span>
+          </div>
+        ) : null}
 
         <div className="actions">
           <span className="ps">$</span>
@@ -219,8 +249,8 @@ export function ResultScreen({
         </div>
 
         <div className="foot">
-          The 3D model and angle are AI estimates inferred from a single camera — use them as
-          directional feedback, not as measurements.
+          The 3D model and every metric are AI estimates inferred from a single camera — use them
+          as directional feedback, not as measurements.
         </div>
       </TermWindow>
     </div>

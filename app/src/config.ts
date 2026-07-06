@@ -17,6 +17,9 @@ export interface Settings {
   apiBaseUrl: string;
   apiKey: string;
   mockApi: boolean;
+  /** Selected camera deviceId ("" = browser default). Enables picking an
+   *  external camera such as an iPhone via Continuity Camera. */
+  cameraDeviceId: string;
 }
 
 const STORAGE_KEY = "servebot.settings.v1";
@@ -29,6 +32,7 @@ export const ENV_DEFAULTS: Settings = {
     import.meta.env.VITE_MOCK_API !== undefined
       ? import.meta.env.VITE_MOCK_API === "true"
       : true,
+  cameraDeviceId: "",
 };
 
 export function loadSettings(): Settings {
@@ -41,6 +45,7 @@ export function loadSettings(): Settings {
       apiBaseUrl: typeof parsed.apiBaseUrl === "string" && parsed.apiBaseUrl ? parsed.apiBaseUrl : ENV_DEFAULTS.apiBaseUrl,
       apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : ENV_DEFAULTS.apiKey,
       mockApi: typeof parsed.mockApi === "boolean" ? parsed.mockApi : ENV_DEFAULTS.mockApi,
+      cameraDeviceId: typeof parsed.cameraDeviceId === "string" ? parsed.cameraDeviceId : "",
     };
   } catch {
     return { ...ENV_DEFAULTS };

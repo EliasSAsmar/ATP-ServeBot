@@ -46,6 +46,7 @@ export default function App() {
       return (
         <LiveScreen
           settings={settings}
+          onSettingsChange={updateSettings}
           onCaptured={(clip) => setScreen({ name: "analyzing", clip })}
           onOpenSettings={() => setScreen({ name: "settings", from: "live" })}
         />

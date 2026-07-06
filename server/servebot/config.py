@@ -59,6 +59,30 @@ class Settings:
     upload_url_ttl_s: int = 300             # presigned PUT expiry (5 min)
     glb_url_ttl_s: int = 900                # presigned GET expiry (15 min)
 
+    # Analysis pipeline selection (Milestone v1 Step 4).
+    #   "stub"  = schema-valid canned pipeline (default; torch-free)
+    #   "sam3d" = real SAM 3D Body on SERVEBOT_DEVICE (needs requirements-ml.txt,
+    #             the MPS-patched sam-3d-body repo, and the local checkpoint dir)
+    pipeline: str = "stub"
+    sam3d_checkpoint_dir: str = ""  # dir with model.ckpt / model_config.yaml / assets/mhr_model.pt
+    sam3d_repo: str = ""            # MPS-patched facebookresearch/sam-3d-body checkout
+    device: str = "mps"
+
+    # Phase-2 tracking + multi-frame recon (sam3d pipeline only).
+    # YOLO weights: names auto-download into yolo_models_dir on first use.
+    # yolo11m@1280 measured ~107ms/frame on M1 Pro MPS with spike-equal ball
+    # recall; yolo11n-pose@960 ~23ms/frame.
+    yolo_det_model: str = "yolo11m.pt"
+    yolo_pose_model: str = "yolo11n-pose.pt"
+    yolo_models_dir: str = "./.models"
+    # Analysis window around the edge contact timestamp (bounds latency and
+    # memory — frames outside it are decoded but not kept).
+    track_window_before_ms: int = 2800
+    track_window_after_ms: int = 1500
+    track_window_max_frames: int = 240
+    # SAM 3D Body keyframe budget per serve (12-16; NOT every frame).
+    sam3d_keyframes: int = 14
+
     # Job model (API_CONTRACT.md §3-4).
     queue_max_depth: int = 4
     poll_after_ms: int = 1500
@@ -94,6 +118,23 @@ class Settings:
             s3_clips_bucket=_env_str("S3_CLIPS_BUCKET", defaults.s3_clips_bucket),
             s3_meshes_bucket=_env_str("S3_MESHES_BUCKET", defaults.s3_meshes_bucket),
             aws_region=_env_str("AWS_REGION", defaults.aws_region),
+            pipeline=_env_str("PIPELINE", defaults.pipeline),
+            sam3d_checkpoint_dir=_env_str("SAM3D_CHECKPOINT_DIR", defaults.sam3d_checkpoint_dir),
+            sam3d_repo=_env_str("SAM3D_REPO", defaults.sam3d_repo),
+            device=_env_str("DEVICE", defaults.device),
+            yolo_det_model=_env_str("YOLO_DET_MODEL", defaults.yolo_det_model),
+            yolo_pose_model=_env_str("YOLO_POSE_MODEL", defaults.yolo_pose_model),
+            yolo_models_dir=_env_str("YOLO_MODELS_DIR", defaults.yolo_models_dir),
+            track_window_before_ms=_env_int(
+                "TRACK_WINDOW_BEFORE_MS", defaults.track_window_before_ms
+            ),
+            track_window_after_ms=_env_int(
+                "TRACK_WINDOW_AFTER_MS", defaults.track_window_after_ms
+            ),
+            track_window_max_frames=_env_int(
+                "TRACK_WINDOW_MAX_FRAMES", defaults.track_window_max_frames
+            ),
+            sam3d_keyframes=_env_int("SAM3D_KEYFRAMES", defaults.sam3d_keyframes),
             max_clip_bytes=_env_int("MAX_CLIP_BYTES", defaults.max_clip_bytes),
             upload_url_ttl_s=_env_int("UPLOAD_URL_TTL_S", defaults.upload_url_ttl_s),
             glb_url_ttl_s=_env_int("GLB_URL_TTL_S", defaults.glb_url_ttl_s),

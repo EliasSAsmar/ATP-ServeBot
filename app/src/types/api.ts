@@ -165,15 +165,101 @@ export interface MetricValue {
   missing?: string[];
 }
 
+/**
+ * Phase-2 angle metric (shoulder / knee). Same shape as MetricValue but the
+ * band vocabulary is metric-specific, so it is typed as an open string.
+ * reference_range_deg is present for shoulder, absent for knee.
+ */
+export interface AngleMetric {
+  value: number | null;
+  unit: string; // "degree"
+  side?: string;
+  band?: string;
+  confidence: number;
+  reference_range_deg?: [number, number];
+  compute_error?: string;
+  missing?: string[];
+}
+
+/** Contact height: wrist height at contact as a ratio of standing height. */
+export interface ContactHeightMetric {
+  value: number | null;
+  unit: string; // "ratio"
+  wrist_y_m?: number;
+  standing_height_m?: number;
+  compute_error?: string;
+  missing?: string[];
+}
+
+/** Serve phase durations in ms (windup → trophy → acceleration → follow_through). */
+export interface PhaseTimingMetric {
+  unit: string; // "ms"
+  contact_ms: number;
+  phases: {
+    windup?: number;
+    trophy?: number;
+    acceleration?: number;
+    follow_through?: number;
+  };
+}
+
+/** Kinetic chain: per-segment peak angular-velocity times (proximal → distal). */
+export interface KineticChainSequence {
+  segments: string[]; // e.g. ["pelvis","trunk","upper_arm","forearm","hand"]
+  peak_times_ms: Record<string, number>;
+  peak_deg_s: Record<string, number>;
+  order_correct: boolean;
+  gaps_ms: number[];
+  note?: string;
+}
+
+/** Toss placement relative to a body reference (e.g. front foot). */
+export interface TossPlacement {
+  offset_forward_cm: number;
+  offset_lateral_cm: number | null;
+  apex_height_m: number;
+  reference: string;
+}
+
 export interface ServeMetrics {
   elbow_angle_deg: MetricValue | null;
-  shoulder_angle_deg: MetricValue | null;
-  knee_flexion_deg: MetricValue | null;
-  kinetic_chain_sequence: unknown | null;
-  toss_placement: unknown | null;
-  toss_consistency: unknown | null;
-  contact_height: unknown | null;
-  phase_timing: unknown | null;
+  shoulder_angle_deg: AngleMetric | null;
+  knee_flexion_deg: AngleMetric | null;
+  kinetic_chain_sequence: KineticChainSequence | null;
+  toss_placement: TossPlacement | null;
+  toss_consistency: null; // not implemented yet (needs multiple serves)
+  contact_height: ContactHeightMetric | null;
+  phase_timing: PhaseTimingMetric | null;
+}
+
+// ---------------------------------------------------------------------------
+// §4d result.tracking — 2D ball / racket tracks (phase 2)
+// ---------------------------------------------------------------------------
+
+export interface BallTrackPoint {
+  t_ms: number;
+  x: number; // px, image space
+  y: number; // px, image space (+y down)
+  in_flight: boolean;
+}
+
+export interface RacketTrackPoint {
+  t_ms: number;
+  x: number;
+  y: number;
+}
+
+export interface ServeTracking {
+  ball: {
+    points: BallTrackPoint[];
+    apex: { t_ms: number; height_m: number };
+  };
+  racket: {
+    peak_speed_m_s: number;
+    points: RacketTrackPoint[];
+  };
+  contact: { t_ms: number; height_m: number };
+  scale: { px_per_m: number; method: string };
 }
 
 export type TipSeverity = "info" | "suggestion" | "flag";
@@ -199,6 +285,8 @@ export interface ServeResult {
   };
   keyframes: Keyframe[];
   metrics: ServeMetrics;
+  /** 2D ball/racket tracking (phase 2). Absent or null when not computed. */
+  tracking?: ServeTracking | null;
   tips: Tip[];
   diagnostics?: Record<string, unknown>;
 }

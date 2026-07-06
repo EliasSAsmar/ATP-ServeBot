@@ -1,8 +1,13 @@
-"""Metric engine — METRICS.md. v1 implements `elbow_angle_deg` for real.
+"""Metric engine — METRICS.md. Computes `elbow_angle_deg` from the contact
+keypoints and initializes every other planned metric key to `null` per the
+API_CONTRACT.md §4c nullability rule (`null` = not built; an object with
+`value: null` + `compute_error` = built but failed on this serve).
 
-All other metrics are stubs and are reported as `null` (present keys) per the
-API_CONTRACT.md §4c nullability rule: `null` = not built; an object with
-`value: null` + `compute_error` = built but failed on this serve.
+The stub pipeline ships this dict as-is (all phase-2 keys null). The sam3d
+pipeline overlays the phase-2 metrics (shoulder/knee/contact-height/phase-
+timing/kinetic-chain/toss-placement) computed by `servebot.temporal` and
+`servebot.tracking`; `toss_consistency` stays null (needs multi-serve
+history).
 """
 
 from __future__ import annotations

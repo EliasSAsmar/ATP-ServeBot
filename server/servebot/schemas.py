@@ -210,17 +210,156 @@ class ElbowAngleFailed(BaseModel):
 ElbowAngleMetric = Union[ElbowAngleComputed, ElbowAngleFailed]
 
 
+# ---- phase-2 metric objects (populated by the sam3d pipeline; the stub
+# ---- pipeline always emits them as null, keeping the contract keys stable).
+
+ShoulderBand = Literal["low", "good", "high"]
+KneeBand = Literal["deep", "moderate", "shallow"]
+
+
+class ShoulderAngleMetric(BaseModel):
+    """METRICS.md §2 — torso/upper-arm angle at contact, serving side."""
+
+    value: float
+    unit: Literal["degree"] = "degree"
+    side: Handedness
+    band: ShoulderBand
+    confidence: float = Field(ge=0.0, le=1.0)
+    reference_range_deg: Tuple[float, float]
+
+
+class KneeFlexionMetric(BaseModel):
+    """METRICS.md §3 — deepest loading knee bend across pre-contact keyframes."""
+
+    value: float
+    unit: Literal["degree"] = "degree"
+    side: Handedness
+    band: KneeBand
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class ContactHeightMetric(BaseModel):
+    """METRICS.md §7 — wrist height at contact / standing height (3D, meters)."""
+
+    value: float
+    unit: Literal["ratio"] = "ratio"
+    wrist_y_m: float
+    standing_height_m: float
+
+
+class PhaseDurations(BaseModel):
+    """Duration of each serve phase in milliseconds."""
+
+    windup: int
+    trophy: int
+    acceleration: int
+    follow_through: int
+
+
+class PhaseTimingMetric(BaseModel):
+    """METRICS.md §8 — phase durations + absolute contact time in clip ms."""
+
+    unit: Literal["ms"] = "ms"
+    contact_ms: int
+    phases: PhaseDurations
+
+
+class KineticChainMetric(BaseModel):
+    """METRICS.md §4 — peak angular-velocity ordering, proximal->distal.
+
+    `note` carries the single-camera honesty caveat (pelvis/trunk timing is a
+    projection proxy and noisy — treat `order_correct` as indicative).
+    """
+
+    segments: List[str]
+    peak_times_ms: Dict[str, int]
+    peak_deg_s: Dict[str, float]
+    order_correct: bool
+    gaps_ms: List[int]
+    note: str
+
+
+class TossPlacementMetric(BaseModel):
+    """METRICS.md §5 — ball-apex placement vs body (gravity-calibrated).
+
+    `offset_lateral_cm` is null from a single side-on camera (the lateral
+    axis runs along the camera axis).
+    """
+
+    offset_forward_cm: float
+    offset_lateral_cm: Optional[float] = None
+    apex_height_m: float
+    reference: str
+
+
 class MetricsBlock(BaseModel):
-    """All planned metric keys present; stubs are always null in v1."""
+    """All planned metric keys present. `null` = not built for this serve
+    (stub pipeline: always null; sam3d: null when its input signal — ball
+    track, pose motion, recon stack — was unusable on this clip)."""
 
     elbow_angle_deg: ElbowAngleMetric
-    shoulder_angle_deg: None = None
-    knee_flexion_deg: None = None
-    kinetic_chain_sequence: None = None
-    toss_placement: None = None
-    toss_consistency: None = None
-    contact_height: None = None
-    phase_timing: None = None
+    shoulder_angle_deg: Optional[ShoulderAngleMetric] = None
+    knee_flexion_deg: Optional[KneeFlexionMetric] = None
+    kinetic_chain_sequence: Optional[KineticChainMetric] = None
+    toss_placement: Optional[TossPlacementMetric] = None
+    toss_consistency: None = None  # needs multi-serve history (session-level)
+    contact_height: Optional[ContactHeightMetric] = None
+    phase_timing: Optional[PhaseTimingMetric] = None
+
+
+# ---- result.tracking — ball/racket visualization block (nullable whole).
+
+
+class BallPoint(BaseModel):
+    """Tracked ball center. x/y in ORIGINAL clip pixel coordinates."""
+
+    t_ms: int
+    x: float
+    y: float
+    in_flight: bool  # True between toss release and contact
+
+
+class BallApex(BaseModel):
+    t_ms: int
+    height_m: float  # above the ground line, gravity-calibrated
+
+
+class BallTrack(BaseModel):
+    points: List[BallPoint]
+    apex: BallApex
+
+
+class RacketPoint(BaseModel):
+    """Racket bbox center. x/y in ORIGINAL clip pixel coordinates."""
+
+    t_ms: int
+    x: float
+    y: float
+
+
+class RacketTrack(BaseModel):
+    peak_speed_m_s: Optional[float] = None  # bbox-center proxy (underestimates head speed)
+    points: List[RacketPoint]
+
+
+class TrackContact(BaseModel):
+    t_ms: int
+    height_m: float
+
+
+class TrackScale(BaseModel):
+    px_per_m: float
+    method: str  # "gravity_fit" | "person_height_prior"
+
+
+class TrackingBlock(BaseModel):
+    """Ball/racket tracking for UI visualization. The whole block is null
+    when tracking didn't run or found no usable toss arc."""
+
+    ball: BallTrack
+    racket: Optional[RacketTrack] = None
+    contact: TrackContact
+    scale: TrackScale
 
 
 class TriggeredBy(BaseModel):
@@ -239,7 +378,7 @@ class Tip(BaseModel):
 
 
 class ModelVersions(BaseModel):
-    sam3: str
+    sam3: Optional[str] = None  # null = SAM 3 not used (v1 local MPS path)
     sam3d_body: str
     metric_engine: str
     tip_engine: str
@@ -273,6 +412,7 @@ class ServeResult(BaseModel):
     contact: ContactInfo
     keyframes: List[Keyframe] = Field(min_length=1, max_length=1)  # v1: contact only
     metrics: MetricsBlock
+    tracking: Optional[TrackingBlock] = None  # null when tracking didn't run
     tips: List[Tip]  # [] when nothing fired — never null
     diagnostics: Diagnostics
 

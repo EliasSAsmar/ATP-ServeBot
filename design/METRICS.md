@@ -1,8 +1,10 @@
 # METRICS
 
-Metric definitions, **actual formulas**, and the rule-based tip thresholds. **Elbow angle is fully specified and implemented in v1.** Every other metric is **specified as a stub** (shape + intended formula) and returns `null` in the API until built.
+Metric definitions, **actual formulas**, and the rule-based tip thresholds.
 
-All metrics are computed from the **3D keypoints (meters)** emitted by SAM 3D Body on the contact keyframe, except where a metric explicitly needs multiple frames (flagged, and stubbed in v1). Keypoint names refer to the canonical map in `MODELS.md §4.4`.
+**Status (phase-2):** on the real (`sam3d`) pipeline, `elbow_angle_deg`, `shoulder_angle_deg`, `knee_flexion_deg`, `contact_height`, `phase_timing`, `kinetic_chain_sequence`, and `toss_placement` are implemented; **`toss_consistency` remains a stub** (needs multi-serve history). The stub pipeline still returns `null` for every metric except elbow. A metric that is implemented can still be `null` on a given serve when its input signal was unusable (no ball found, no serve motion, etc.).
+
+Data sources per metric: **contact-frame** metrics (elbow) use the SAM 3D Body contact keyframe; **multi-keyframe** metrics (shoulder/knee/contact-height) use a bounded stack of ~12–16 SAM 3D Body keyframes spanning windup → follow-through; **dense temporal** metrics (phase timing, kinetic chain) use a cheap 2D YOLO-pose pass over every frame of the analysis window; **ball** metrics (toss placement, plus `result.tracking`) use YOLO ball/racket tracking with gravity-fit scale calibration. Keypoint names refer to the canonical map in `MODELS.md §4.4`.
 
 ## 0. Shared conventions
 
@@ -83,59 +85,82 @@ cos θ = -0.05750 / (0.2506·0.2296) = -0.05750 / 0.05754 = -0.99930
 
 ---
 
-## 2. Shoulder angle — `shoulder_angle_deg` 🔲 STUB
+## 2. Shoulder angle — `shoulder_angle_deg` ✅ IMPLEMENTED (phase-2, sam3d pipeline)
 
-**Intended definition:** abduction/elevation angle of the hitting upper arm relative to the torso at contact (how high the arm is raised).
+**Definition:** abduction/elevation angle of the hitting upper arm relative to the torso at contact (how high the arm is raised).
 
-**Intended joints:** `hip(serving side)`, `shoulder(serving side)`, `elbow(serving side)` — angle at shoulder between torso vector (`shoulder→hip`) and upper-arm vector (`shoulder→elbow`).
+**Joints:** `hip(serving side)`, `shoulder(serving side)`, `elbow(serving side)` — angle at shoulder between torso vector (`shoulder→hip`) and upper-arm vector (`shoulder→elbow`).
 
-**Intended formula:** angle-at-joint with `J=shoulder`, `A=hip`, `C=elbow`. Optionally reported relative to spine vertical.
+**Formula:** angle-at-joint (§0) with `J=shoulder`, `A=hip`, `C=elbow`, evaluated on the SAM 3D Body contact keyframe after a temporal median-3 filter over the keyframe stack (kills single-frame reconstruction glitches — the fastest phase has motion blur).
 
-**v1 status:** returns `null`.
+**Output:** `{ value, unit:"degree", side, band, confidence, reference_range_deg:[90,140] }`.
 
----
+| band | range |
+|---|---|
+| `low` | `< 90°` (arm not elevated enough at contact) |
+| `good` | `[90°, 140°]` |
+| `high` | `> 140°` |
 
-## 3. Knee flexion — `knee_flexion_deg` 🔲 STUB
-
-**Intended definition:** flexion of the loading/front knee (leg drive). Requires choosing which leg (front vs back) — depends on stance detection, deferred.
-
-**Intended joints:** `hip`, `knee`, `ankle` (chosen side). Angle at `knee`.
-
-**Intended formula:** angle-at-joint with `J=knee`, `A=hip`, `C=ankle`. 180° = straight leg; smaller = deeper bend.
-
-**v1 status:** `null`. Note: most informative during the *loading* phase, not contact → needs a loading keyframe (multi-keyframe, phase-2).
+`confidence` is 1.0 (SAM 3D Body exposes no per-keypoint confidence). `null` when the recon stack failed; stub pipeline: always `null`.
 
 ---
 
-## 4. Kinetic chain sequencing — `kinetic_chain_sequence` 🔲 STUB (temporal)
+## 3. Knee flexion — `knee_flexion_deg` ✅ IMPLEMENTED (phase-2, sam3d pipeline)
 
-**Intended definition:** the ordering and timing of peak angular velocities up the chain (legs → hips → trunk → shoulder → elbow → wrist). A proper serve fires proximal→distal.
+**Definition:** deepest loading knee bend before contact (leg drive).
 
-**Intended output shape:**
-```json
-{
-  "value": null,
-  "unit": "ordering",
-  "segments": ["hip","trunk","shoulder","elbow","wrist"],
-  "peak_times_ms": null,
-  "order_correct": null,
-  "gaps_ms": null
-}
+**Joints:** `hip`, `knee`, `ankle` per side. Angle at `knee`; 180° = straight leg, smaller = deeper bend.
+
+**Formula:** angle-at-joint (§0) with `J=knee`, `A=hip`, `C=ankle`, computed per side across **all pre-contact SAM 3D Body keyframes** (median-3 filtered); the reported `value` is the minimum (deepest bend) and `side` is the deeper leg — no stance detection needed, the loading leg self-selects as the one that bends more.
+
+**Output:** `{ value, unit:"degree", side, band, confidence }`.
+
+| band | range |
+|---|---|
+| `deep` | `< 115°` |
+| `moderate` | `[115°, 145°]` |
+| `shallow` | `> 145°` (little leg drive) |
+
+---
+
+## 4. Kinetic chain sequencing — `kinetic_chain_sequence` ✅ IMPLEMENTED (phase-2, sam3d pipeline) — with a big caveat
+
+**Definition:** the ordering and timing of peak angular velocities up the chain (pelvis → trunk → upper arm → forearm). A proper serve fires proximal→distal.
+
+**Method (engineered for latency):** millisecond-level peak timing needs *dense* sampling, and dense 3D reconstruction of every frame would blow the per-serve budget — so timing comes from a **dense 2D pose pass (YOLO-pose) across every window frame**, not from the sparse SAM 3D keyframes:
+
+- `pelvis` / `trunk`: axial-rotation-rate proxy from the projected width of the hip/shoulder line — `az(t) = arccos(width(t) / p95(width))`, rate = `|d az/dt|` (deg/s).
+- `upper_arm`: `|d/dt angle(hip, shoulder, elbow)|` (2D, serving side).
+- `forearm`: `|d/dt angle(shoulder, elbow, wrist)|` (2D, serving side).
+
+All signals are Gaussian-smoothed (σ≈0.10 s); peaks are searched in the acceleration phase (racquet drop → contact, plus a small margin) — the sequence fires there, not during the slow windup.
+
+**Output:** `{ segments[], peak_times_ms{seg}, peak_deg_s{seg}, order_correct, gaps_ms[], note }`. `peak_times_ms` are absolute clip ms; `gaps_ms[i]` = time from segment *i* to segment *i+1* (negative = out of order); `order_correct` = all gaps ≥ 0.
+
+**⚠️ HONEST CAVEAT (confirmed by the serve-breakdown showcase):** from a **single camera**, pelvis/trunk axial rotation happens mostly *about the view axis* — the projected-width proxy is noisy and its peak time can slip by several frames. The `note` field carries this caveat verbatim; clients should present `order_correct` as indicative, not diagnostic. Proper kinetic-chain grading needs either a second view or a rotation-aware 3D fit of dense frames.
+
+`null` when phase detection failed (no usable serve motion) or fewer than 3 segment signals were computable.
+
+---
+
+## 5. Toss placement — `toss_placement` ✅ IMPLEMENTED (phase-2, sam3d pipeline) — real ball tracking, not a wrist proxy
+
+**Definition:** where the ball is tossed relative to the body at toss apex.
+
+**Method (from the ball-racket spike):** YOLO detects the ball per frame; static detections (ball baskets, court clutter) are suppressed by grid occupancy; moving detections are chained into tracklets with velocity-predicted gating; the **toss chain** is the tracklet with the largest upward travel, gap-filled by ROI-zoom re-detection. The toss free flight (release → contact) is fit with a parabola `y(t) = a t² + b t + c`:
+
+```
+g_px      = 2a                       # px/s², should be gravity
+px_per_m  = g_px / 9.81              # scale calibration — no reference object needed
+apex      = vertex of the parabola   # t_apex = -b/2a
+offset_forward_cm = (x_apex - body_center_x_at_release) * direction * 100 / px_per_m
 ```
 
-**Intended method:** track per-segment angular velocity across a **sequence of keyframes/frames**, find each segment's peak-velocity time, check monotonic proximal→distal ordering and inter-segment gaps.
+`direction` (+1 = serving toward image +x) comes from the ball's post-contact horizontal velocity. When the gravity fit is degenerate (`g_px < 300 px/s²`), scale falls back to a 1.75 m person-height prior (`scale.method = "person_height_prior"` in `result.tracking`).
 
-**v1 status:** `null`. **Hard-blocked** on multi-frame keypoints (v1 reconstructs one frame). This is the flagship phase-2 metric.
+**Output:** `{ offset_forward_cm, offset_lateral_cm: null, apex_height_m, reference: "body_center" }`.
 
----
-
-## 5. Toss placement — `toss_placement` 🔲 STUB
-
-**Intended definition:** where the ball is tossed relative to the body at apex (forward/back, left/right), from the tossing-hand wrist trajectory as a **proxy** (ball not tracked in v1).
-
-**Intended output:** `{ "value": null, "unit": "cm", "offset_forward_cm": null, "offset_lateral_cm": null, "reference": "front_foot" }`.
-
-**v1 status:** `null`. Depends on tossing-arm trajectory over time (temporal) and, ideally, ball tracking (phase-2). Proxy-only until then.
+**Limitation:** `offset_lateral_cm` is `null` — with a single side-on camera the lateral (baseline) axis runs along the camera axis and is not observable. `null` when no toss arc was found (ball never detected rising).
 
 ---
 
@@ -149,39 +174,38 @@ cos θ = -0.05750 / (0.2506·0.2296) = -0.05750 / 0.05754 = -0.99930
 
 ---
 
-## 7. Contact height — `contact_height` 🔲 STUB
+## 7. Contact height — `contact_height` ✅ IMPLEMENTED (phase-2, sam3d pipeline)
 
-**Intended definition:** height of the hitting wrist at contact, **normalized by player standing height** (to compare across players).
+**Definition:** height of the hitting wrist at contact, **normalized by player standing height** (to compare across players).
 
-**Intended formula:**
+**Formula** (3D, meters, from the SAM 3D Body keyframe stack; camera y is down so "up" = −y):
 ```
-contact_height_ratio = wrist_y(contact) / standing_height
-standing_height ≈ (top_of_head_y − mean(ankle_y))  # from a neutral/standing frame
+wrist_y_m         = up(wrist, contact) − mean(up(ankles), contact)
+extent(k)         = up(nose, k) − mean(up(ankles), k)          # per keyframe
+standing_height_m = max_k extent(k) × 1.06                     # nose → top-of-head offset
+value             = wrist_y_m / standing_height_m
 ```
+The standing reference self-selects as the keyframe with the tallest nose-over-ankle extent (the most upright moment of the windup) — no separate calibration frame needed. The 1.06 factor converts nose height to stature (the nose sits ≈ 94% of standing height).
 
-**Intended output:** `{ "value": null, "unit": "ratio", "wrist_y_m": null, "standing_height_m": null }`.
-
-**v1 status:** `null`. Computable at contact from a single frame **once** a standing-height reference exists (needs a calibration/neutral frame). Good early phase-2 candidate.
+**Output:** `{ value, unit:"ratio", wrist_y_m, standing_height_m }`. Typical good serves contact at ~1.4–1.5× standing height. `null` when the recon stack was degenerate (non-positive extent or wrist height).
 
 ---
 
-## 8. Phase timing — `phase_timing` 🔲 STUB (temporal)
+## 8. Phase timing — `phase_timing` ✅ IMPLEMENTED (phase-2, sam3d pipeline)
 
-**Intended definition:** durations of serve phases — start → trophy → contact → follow-through — in ms.
+**Definition:** durations of the serve phases in ms, plus the absolute contact time.
 
-**Intended output:**
-```json
-{
-  "value": null,
-  "unit": "ms",
-  "phases": {"windup": null, "trophy": null, "acceleration": null, "follow_through": null},
-  "contact_ms": null
-}
-```
+**Method:** phase boundaries from the serving wrist's dense 2D trajectory (YOLO-pose, every window frame — from the serve-breakdown spike):
 
-**Intended method:** detect phase boundaries from wrist/elbow kinematics across the clip.
+- **contact** = peak wrist reach (max smoothed wrist height, refined on the raw signal within ±150 ms).
+- **acceleration start** = scan back from the peak upward wrist velocity until it falls below 10% of that peak (the racquet-drop turnaround).
+- **trophy start** = last upward crossing of 40% of the pre-drop wrist rise (arm cocking upward).
+- **windup start** = first sustained wrist motion (speed > 15% of the pre-trophy max).
+- **follow-through end** = wrist height minimum after contact.
 
-**v1 status:** `null`. Temporal; phase-2.
+Guards: the wrist must travel ≥ 25% of body height across the window and the detected serve must span ≥ 400 ms, else the metric is `null` (protects static/irrelevant clips from producing garbage).
+
+**Output:** `{ unit:"ms", contact_ms, phases: { windup, trophy, acceleration, follow_through } }` — each phase value is a **duration** in ms; `contact_ms` is absolute clip time.
 
 ---
 
