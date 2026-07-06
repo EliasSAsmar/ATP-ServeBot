@@ -25,6 +25,9 @@ UtcMillis = Annotated[
 ]
 
 Handedness = Literal["right", "left"]
+# "tennis" = full serve analysis; "golf" = SAM 3D body scan only (no
+# serve refinement, metrics, tips, or ball/racket tracking).
+Sport = Literal["tennis", "golf"]
 JobStatus = Literal["queued", "running", "succeeded", "failed"]
 Stage = Literal[
     "downloading",
@@ -127,6 +130,9 @@ class CreateServeRequest(BaseModel):
     # Kept as `str` so the route can return the dedicated `invalid_handedness`
     # error code instead of a generic validation failure.
     handedness: str
+    # Same looseness as handedness (route validates); omitted -> tennis, so
+    # pre-sport clients keep working unchanged.
+    sport: str = "tennis"
     contact_timestamp_ms: int
     clip: ClipMeta
     edge_detect: Optional[EdgeDetect] = None
@@ -295,9 +301,10 @@ class TossPlacementMetric(BaseModel):
 class MetricsBlock(BaseModel):
     """All planned metric keys present. `null` = not built for this serve
     (stub pipeline: always null; sam3d: null when its input signal — ball
-    track, pose motion, recon stack — was unusable on this clip)."""
+    track, pose motion, recon stack — was unusable on this clip). Golf
+    body-scan jobs emit every key as null."""
 
-    elbow_angle_deg: ElbowAngleMetric
+    elbow_angle_deg: Optional[ElbowAngleMetric] = None
     shoulder_angle_deg: Optional[ShoulderAngleMetric] = None
     knee_flexion_deg: Optional[KneeFlexionMetric] = None
     kinetic_chain_sequence: Optional[KineticChainMetric] = None

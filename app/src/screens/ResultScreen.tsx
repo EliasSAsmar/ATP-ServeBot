@@ -100,7 +100,9 @@ export function ResultScreen({
     void loadMesh();
   }, [loadMesh]);
 
-  const serveCtx = `~/serves/${currentJob.job_id.slice(0, 12)}`;
+  const golf = settings.sport === "golf";
+  const serveCtx = `~/${golf ? "swings" : "serves"}/${currentJob.job_id.slice(0, 12)}`;
+  const newLabel = golf ? "New swing" : "New serve";
 
   if (!result) {
     return (
@@ -112,7 +114,7 @@ export function ResultScreen({
           <div className="actions">
             <span className="ps">$</span>
             <button className="btn btn-primary" onClick={onNewServe}>
-              New serve
+              {newLabel}
             </button>
             <Cursor />
           </div>
@@ -135,12 +137,14 @@ export function ResultScreen({
     <div className="stage result-screen">
       <TermWindow context={serveCtx} className="result-win">
         <div className="cmd">
-          <span className="prompt">$</span> servebot analyze <span className="path">serve.webm</span>{" "}
+          <span className="prompt">$</span> servebot {golf ? "scan" : "analyze"}{" "}
+          <span className="path">{golf ? "swing.webm" : "serve.webm"}</span>{" "}
+          {golf ? <span className="flag">--sport golf </span> : null}
           <span className="flag">--hand {result.handedness}</span>
         </div>
         <div className="log">
           <span>
-            <span className="ok">✓</span> contact keyframe&nbsp;
+            <span className="ok">✓</span> {golf ? "swing keyframe" : "contact keyframe"}&nbsp;
             <span className="val">
               t={(result.contact.refined_timestamp_ms / 1000).toFixed(2)}s · frame{" "}
               {result.contact.refined_frame_index}
@@ -154,7 +158,11 @@ export function ResultScreen({
           ) : null}
         </div>
 
-        <Panel label="reconstruction" meta="contact frame" ariaLabel="3D reconstruction">
+        <Panel
+          label="reconstruction"
+          meta={golf ? "swing frame" : "contact frame"}
+          ariaLabel="3D reconstruction"
+        >
           <div className="render">
             {meshState === "ready" && glbData ? (
               <GlbViewer glbData={glbData} />
@@ -196,13 +204,13 @@ export function ResultScreen({
           </div>
         </Panel>
 
-        {metric !== null ? <MetricCard metric={metric} /> : null}
+        {!golf && metric !== null ? <MetricCard metric={metric} /> : null}
 
         {/* Phase-2 breakdown — each panel renders only when the backend computed it. */}
-        {m.shoulder_angle_deg !== null ? (
+        {!golf && m.shoulder_angle_deg !== null ? (
           <MetricCard metric={m.shoulder_angle_deg} label="shoulder_angle" subject="arm" />
         ) : null}
-        {m.knee_flexion_deg !== null ? (
+        {!golf && m.knee_flexion_deg !== null ? (
           <MetricCard
             metric={m.knee_flexion_deg}
             label="knee_flexion"
@@ -211,16 +219,19 @@ export function ResultScreen({
             maxDeg={90}
           />
         ) : null}
-        {m.contact_height !== null ? <ContactHeightPanel metric={m.contact_height} /> : null}
-        {m.phase_timing !== null ? <PhaseTimelinePanel timing={m.phase_timing} /> : null}
-        {m.kinetic_chain_sequence !== null ? (
+        {!golf && m.contact_height !== null ? <ContactHeightPanel metric={m.contact_height} /> : null}
+        {!golf && m.phase_timing !== null ? <PhaseTimelinePanel timing={m.phase_timing} /> : null}
+        {!golf && m.kinetic_chain_sequence !== null ? (
           <KineticChainPanel chain={m.kinetic_chain_sequence} contactMs={contactMs} />
         ) : null}
-        {m.toss_placement !== null ? <TossPanel toss={m.toss_placement} tracking={tracking} /> : null}
-        {tracking !== null ? <BallTrajectoryPanel tracking={tracking} /> : null}
+        {!golf && m.toss_placement !== null ? (
+          <TossPanel toss={m.toss_placement} tracking={tracking} />
+        ) : null}
+        {!golf && tracking !== null ? <BallTrajectoryPanel tracking={tracking} /> : null}
 
-        <TipList tips={result.tips} suppressed={uncertain || unavailable} />
-        {uncertain ? (
+        {/* Golf is a body scan only — no coaching/metric chrome (by design). */}
+        {!golf ? <TipList tips={result.tips} suppressed={uncertain || unavailable} /> : null}
+        {!golf && uncertain ? (
           <Panel label="coach" className="coach" ariaLabel="Coaching">
             <p>
               <span className="arrow">&gt;</span> The AI wasn&rsquo;t confident about your form on
@@ -229,7 +240,7 @@ export function ResultScreen({
           </Panel>
         ) : null}
 
-        {pendingKeys.length > 0 ? (
+        {!golf && pendingKeys.length > 0 ? (
           <div className="stubs" aria-label="Metrics not computed for this serve">
             {pendingKeys.map((k) => (
               <span key={k}>
@@ -243,14 +254,15 @@ export function ResultScreen({
         <div className="actions">
           <span className="ps">$</span>
           <button className="btn btn-primary btn-big" onClick={onNewServe}>
-            New serve
+            {newLabel}
           </button>
           <Cursor />
         </div>
 
         <div className="foot">
-          The 3D model and every metric are AI estimates inferred from a single camera — use them
-          as directional feedback, not as measurements.
+          {golf
+            ? "The 3D body is an AI estimate inferred from a single camera — a visual reference, not a measurement."
+            : "The 3D model and every metric are AI estimates inferred from a single camera — use them as directional feedback, not as measurements."}
         </div>
       </TermWindow>
     </div>

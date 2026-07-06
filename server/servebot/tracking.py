@@ -138,6 +138,25 @@ def _ctr(b: List[float]) -> Tuple[float, float]:
 # ---------------------------------------------------------------------------
 
 
+def detect_person(frame_bgr: Any, det_model: Any, device: str) -> Optional[List[float]]:
+    """Largest-person bbox (xyxy+conf) on a single frame; None if no person.
+
+    Used by the golf body-scan path, which reconstructs one frame and has no
+    need for the full ball/racket/pose window pass.
+    """
+    r = det_model.predict(
+        frame_bgr, device=device, imgsz=1280, conf=0.1,
+        classes=[COCO_PERSON], verbose=False,
+    )[0]
+    best: Optional[Tuple[List[float], float]] = None
+    for b in r.boxes:
+        xy = [float(v) for v in b.xyxy[0]]
+        area = (xy[2] - xy[0]) * (xy[3] - xy[1])
+        if best is None or area > best[1]:
+            best = (xy + [float(b.conf)], area)
+    return best[0] if best else None
+
+
 def run_tracking(
     frames_bgr: List[Any],
     frame_ids: List[int],

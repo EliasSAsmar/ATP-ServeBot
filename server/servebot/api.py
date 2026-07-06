@@ -147,6 +147,13 @@ async def create_serve(body: CreateServeRequest, request: Request) -> CreateServ
             "handedness must be one of: right, left",
             field="handedness",
         )
+    if body.sport not in ("tennis", "golf"):
+        raise ApiError(
+            400,
+            "invalid_request",
+            "sport must be one of: tennis, golf",
+            field="sport",
+        )
     if (
         not body.object_key.startswith("clips/")
         or body.object_key not in app.state.minted_uploads

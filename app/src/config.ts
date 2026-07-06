@@ -1,4 +1,4 @@
-import type { Handedness } from "./types/api";
+import type { Handedness, Sport } from "./types/api";
 
 /**
  * App settings: env-var defaults, persisted user overrides in localStorage.
@@ -13,6 +13,8 @@ import type { Handedness } from "./types/api";
 export const APP_VERSION = "0.1.0";
 
 export interface Settings {
+  /** Active sport tab: tennis (serve analysis) or golf (3D body scan). */
+  sport: Sport;
   handedness: Handedness;
   apiBaseUrl: string;
   apiKey: string;
@@ -25,6 +27,7 @@ export interface Settings {
 const STORAGE_KEY = "servebot.settings.v1";
 
 export const ENV_DEFAULTS: Settings = {
+  sport: "tennis",
   handedness: "right",
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000",
   apiKey: import.meta.env.VITE_API_KEY ?? "",
@@ -41,6 +44,7 @@ export function loadSettings(): Settings {
     if (!raw) return { ...ENV_DEFAULTS };
     const parsed = JSON.parse(raw) as Partial<Settings>;
     return {
+      sport: parsed.sport === "golf" ? "golf" : "tennis",
       handedness: parsed.handedness === "left" ? "left" : "right",
       apiBaseUrl: typeof parsed.apiBaseUrl === "string" && parsed.apiBaseUrl ? parsed.apiBaseUrl : ENV_DEFAULTS.apiBaseUrl,
       apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : ENV_DEFAULTS.apiKey,

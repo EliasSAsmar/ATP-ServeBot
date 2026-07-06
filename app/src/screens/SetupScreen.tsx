@@ -68,16 +68,20 @@ export function SetupScreen({
     }
   }, [requestCamera]);
 
+  const golf = settings.sport === "golf";
+
   return (
     <div className="stage setup-screen">
       <TermWindow context="~/init">
         <div>
           <div className="cmd">
             <span className="prompt">$</span> servebot init
+            {golf ? <span className="flag"> --sport golf</span> : null}
           </div>
           <p className="intro small">
-            Live skeleton on your serve, then an AI-estimated 3D look at your contact moment —
-            inferred from a single camera, built for directional feedback.
+            {golf
+              ? "Live skeleton on your swing, then an AI-estimated 3D look at your body after the swing — inferred from a single camera."
+              : "Live skeleton on your serve, then an AI-estimated 3D look at your contact moment — inferred from a single camera, built for directional feedback."}
           </p>
         </div>
 
@@ -119,7 +123,7 @@ export function SetupScreen({
 
         <Panel label="handedness" meta="required">
           <p className="muted small" style={{ marginTop: 0 }}>
-            Which arm do you serve with?
+            {golf ? "Which side do you swing from?" : "Which arm do you serve with?"}
           </p>
           <div className="handedness-row" role="radiogroup" aria-label="Handedness">
             {(["right", "left"] as Handedness[]).map((h) => (
@@ -145,7 +149,7 @@ export function SetupScreen({
           </div>
           {health.status === "offline" ? (
             <p className="muted small">
-              Live tracking and capture still work — only the post-serve 3D analysis needs the
+              Live tracking and capture still work — only the post-capture 3D analysis needs the
               cloud.
             </p>
           ) : null}

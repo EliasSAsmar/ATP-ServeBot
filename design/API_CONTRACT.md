@@ -145,6 +145,7 @@ Called after the clip is in S3.
 {
   "object_key": "clips/2026/07/04/9f8e7d6c-1a2b-4c3d-8e9f-000000000000.webm",
   "handedness": "right",
+  "sport": "tennis",
   "contact_timestamp_ms": 1840,
   "clip": {
     "duration_ms": 3200,
@@ -171,6 +172,7 @@ Called after the clip is in S3.
 |---|---|---|---|
 | `object_key` | string | yes | From `POST /v1/uploads`. Must reference an uploaded object → else `409 clip_not_found`. |
 | `handedness` | enum `right\|left` | yes | Client-supplied. Selects which side's joints metrics use. |
+| `sport` | enum `tennis\|golf` | no | Default `tennis` (full serve analysis). `golf` runs a SAM 3D **body scan only**: no contact refinement, all `result.metrics` keys null, `tips: []`, `tracking: null` — just the reconstructed mesh/keypoints at the captured moment. Invalid value → `400 invalid_request`. |
 | `contact_timestamp_ms` | int | yes | Edge estimate of contact, ms from clip start. `0 ≤ x ≤ duration_ms`. The cloud **refines** this within a window (`MODELS.md §keyframe`). |
 | `clip` | object | yes | Echo of clip metadata. Used for decode sanity checks. |
 | `edge_detect` | object | no | Diagnostics from the on-device heuristic. `contact_confidence` ∈ [0,1]. Purely informational in v1; stored, not required. |

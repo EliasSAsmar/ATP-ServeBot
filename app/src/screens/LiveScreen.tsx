@@ -3,6 +3,7 @@ import { ClipRecorder } from "../capture/clipRecorder";
 import { CloudStatusChip } from "../components/CloudStatusChip";
 import { Panel, TermWindow } from "../components/Terminal";
 import type { Settings } from "../config";
+import { GOLF_DETECTOR_VERSION, GolfSwingDetector } from "../detect/golfSwingDetector";
 import { DETECTOR_VERSION, ServeDetector, type ServeDetection } from "../detect/serveDetector";
 import type { CapturedClip } from "../flow/analysis";
 import { useHealth } from "../hooks/useHealth";
@@ -64,6 +65,13 @@ export function LiveScreen({
   onCapturedRef.current = onCaptured;
   captureModeRef.current = captureMode;
 
+  // Golf uses its own swing detector (the serve heuristic is overhead-reach
+  // specific). Ref so the rAF loop sees sport switches live.
+  const golf = settings.sport === "golf";
+  const golfRef = useRef(golf);
+  golfRef.current = golf;
+  const golfDetectorRef = useRef(new GolfSwingDetector());
+
   useEffect(() => {
     detectorRef.current.setHandedness(settings.handedness);
   }, [settings.handedness]);
@@ -95,7 +103,7 @@ export function LiveScreen({
           ...(detection
             ? {
                 edgeDetect: {
-                  detector_version: DETECTOR_VERSION,
+                  detector_version: golfRef.current ? GOLF_DETECTOR_VERSION : DETECTOR_VERSION,
                   contact_confidence: detection.confidence,
                   peak_wrist_velocity_px_s: Math.round(detection.peakWristVelocityPxS * 10) / 10,
                   arm_elevation_deg_at_contact: detection.armElevationDeg,
@@ -238,8 +246,11 @@ export function LiveScreen({
             setLiveState((s) => (s === "tracking" ? "no_pose" : s));
           }
         }
-        // Serve auto-detect — armed only in Auto mode and while not finalizing.
-        const detection = detectorRef.current.update(frame.landmarks, now, v.videoHeight);
+        // Auto-detect — armed only in Auto mode and while not finalizing.
+        // Tennis watches the serve's overhead reach; golf watches the swing's
+        // hand-speed spike through impact.
+        const activeDetector = golfRef.current ? golfDetectorRef.current : detectorRef.current;
+        const detection = activeDetector.update(frame.landmarks, now, v.videoHeight);
         if (detection && captureModeRef.current === "auto" && !capturingRef.current) {
           void finalizeCapture(detection.contactTimeMs, "auto", detection);
         }
@@ -278,9 +289,10 @@ export function LiveScreen({
   const manualCapture = useCallback(() => {
     if (capturingRef.current || !recorderRef.current) return;
     const now = performance.now();
-    const lastPeak = detectorRef.current.lastPeakTimeMs;
-    // If the detector saw a reach peak in the last few seconds, treat that as
-    // contact; otherwise assume the user tapped right after their serve.
+    const activeDetector = golfRef.current ? golfDetectorRef.current : detectorRef.current;
+    const lastPeak = activeDetector.lastPeakTimeMs;
+    // If the detector saw a reach/swing peak in the last few seconds, treat
+    // that as contact; otherwise assume the user tapped right after.
     const contact = lastPeak !== null && now - lastPeak < 4000 ? lastPeak : Math.max(0, now - 400);
     void finalizeCapture(contact, "manual", null);
   }, [finalizeCapture]);
@@ -405,7 +417,14 @@ export function LiveScreen({
         ) : null}
 
         {detectorArmed ? (
-          <div className="live-hint">Serve naturally — the app detects it automatically.</div>
+          <div className="live-hint">
+            {golf
+              ? "Swing away — it captures automatically at impact."
+              : "Serve naturally — the app detects it automatically."}
+          </div>
+        ) : null}
+        {golf && !detectorArmed && !blocking ? (
+          <div className="live-hint">Take your swing, then hit Capture within a couple seconds.</div>
         ) : null}
       </TermWindow>
     </div>

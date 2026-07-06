@@ -5,6 +5,10 @@
 
 export type Handedness = "right" | "left";
 
+/** Sport mode. "tennis" = full serve analysis; "golf" = SAM 3D body scan of
+ *  the swing only (no metrics/tips/tracking). */
+export type Sport = "tennis" | "golf";
+
 export type ClipContentType = "video/webm" | "video/mp4";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +69,8 @@ export interface EdgeDetectDiagnostics {
 export interface CreateServeRequest {
   object_key: string;
   handedness: Handedness;
+  /** Omitted = "tennis" (backward compatible). */
+  sport?: Sport;
   contact_timestamp_ms: number;
   clip: ClipMeta;
   edge_detect?: EdgeDetectDiagnostics;

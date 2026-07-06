@@ -417,6 +417,60 @@ class Sam3DAnalysisPipeline(AnalysisPipeline):
         )
         return contact, phases, ball, picks, picks.index(contact_widx)
 
+    # ---- golf body-scan path (no serve refinement / metrics / tracking) ----
+
+    def _golf_contact_widx(
+        self, request: CreateServeRequest, frame_ids: List[int],
+        clip_fps: float, frames_decoded: int,
+    ) -> int:
+        """Window index of the frame at the captured moment (edge timestamp)."""
+        edge_frame = int(round(request.contact_timestamp_ms * clip_fps / 1000.0))
+        contact_frame = min(max(edge_frame, 0), frames_decoded - 1)
+        return min(range(len(frame_ids)), key=lambda i: abs(frame_ids[i] - contact_frame))
+
+    def _track_golf(
+        self, request: CreateServeRequest, frames, frame_ids: List[int],
+        eff_fps: float, clip_fps: float, frames_decoded: int,
+    ) -> tracking.Tracks:
+        """Golf: skip the full ball/racket/pose window pass — only detect the
+        person on the single frame SAM 3D will reconstruct."""
+        h, w = frames[0].shape[:2]
+        tracks = tracking.Tracks(
+            fps=eff_fps, width=w, height=h, frame_ids=list(frame_ids),
+            person=[None] * len(frames), racket=[None] * len(frames),
+            racket_src=[None] * len(frames), ball_chain=None,
+        )
+        widx = self._golf_contact_widx(request, frame_ids, clip_fps, frames_decoded)
+        try:
+            tracks.person[widx] = tracking.detect_person(
+                frames[widx], self._yolo_det, self._settings.device
+            )
+        except Exception:
+            log.exception("golf person detect failed; SAM3D will use the full frame")
+        return tracks
+
+    def _select_keyframes_golf(
+        self, request: CreateServeRequest, frame_ids: List[int],
+        clip_fps: float, frames_decoded: int,
+    ):
+        """Golf: trust the captured moment verbatim (no ball/pose refinement)
+        and reconstruct only that one frame."""
+        widx = self._golf_contact_widx(request, frame_ids, clip_fps, frames_decoded)
+        edge_conf = (
+            request.edge_detect.contact_confidence
+            if request.edge_detect and request.edge_detect.contact_confidence is not None
+            else 0.5
+        )
+        contact_frame = frame_ids[widx]
+        contact = ContactInfo(
+            edge_timestamp_ms=request.contact_timestamp_ms,
+            refined_timestamp_ms=int(round(contact_frame * 1000.0 / clip_fps)),
+            refined_frame_index=contact_frame,
+            contact_confidence=edge_conf,
+            refine_window_ms=0,  # no refinement in golf mode
+        )
+        return contact, None, None, [widx], 0
+
     def _reconstruct_one(self, frame_bgr, person_box) -> Dict[str, Any]:
         """SAM 3D Body inference on one frame (MPS), person-bbox cropped."""
         import cv2
@@ -569,9 +623,17 @@ class Sam3DAnalysisPipeline(AnalysisPipeline):
         return TrackingBlock.model_validate(block)
 
     def _export_glb(self, vertices, faces) -> bytes:
-        """Vertices+faces -> binary glTF, +Y up, meters (as in the spike)."""
+        """Vertices+faces -> binary glTF, +Y up, meters.
+
+        SAM 3D Body outputs camera-convention coordinates (+Y down, +Z into
+        the scene); the contract/viewer are +Y up. Rotate 180° about X — the
+        same transform the upstream demo Renderer applies before display —
+        or every mesh renders upside down.
+        """
+        import numpy as np
         import trimesh
 
+        vertices = np.asarray(vertices) * np.array([1.0, -1.0, -1.0])
         mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
         # Neutral matte material so the client viewer gets sane shading.
         mesh.visual = trimesh.visual.TextureVisuals(
@@ -612,13 +674,23 @@ class Sam3DAnalysisPipeline(AnalysisPipeline):
             "decoding", "decode", 0.15, lambda: self._decode(request, clip_bytes), thread=True
         )
 
+        # Golf = body scan only: person-detect one frame, no serve refinement,
+        # no metrics/tips/tracking — just the SAM 3D reconstruction + GLB.
+        golf = request.sport == "golf"
+
         # segmenting — SAM 3 is not used in the v1 local path; this stage now
         # carries the YOLO tracking + dense 2D pose pass (the phase-2 work).
         tracks: tracking.Tracks = await stage(
             "segmenting",
             "segment",
             0.30,
-            lambda: self._track(frames, frame_ids, eff_fps),
+            (
+                lambda: self._track_golf(
+                    request, frames, frame_ids, eff_fps, clip_fps, frames_decoded
+                )
+            )
+            if golf
+            else (lambda: self._track(frames, frame_ids, eff_fps)),
             thread=True,
         )
 
@@ -626,8 +698,16 @@ class Sam3DAnalysisPipeline(AnalysisPipeline):
             "selecting_keyframe",
             "keyframe",
             0.45,
-            lambda: self._select_keyframes(
-                request, tracks, frame_ids, eff_fps, clip_fps, frames_decoded
+            (
+                lambda: self._select_keyframes_golf(
+                    request, frame_ids, clip_fps, frames_decoded
+                )
+            )
+            if golf
+            else (
+                lambda: self._select_keyframes(
+                    request, tracks, frame_ids, eff_fps, clip_fps, frames_decoded
+                )
             ),
             thread=True,
         )
@@ -651,9 +731,13 @@ class Sam3DAnalysisPipeline(AnalysisPipeline):
             "computing_metrics",
             "metrics",
             0.80,
-            lambda: self._assemble_metrics(
-                request, contact_recon, kp3_stack, contact_stack_index,
-                phases, ball, eff_fps, window_t0_ms, tracks,
+            (lambda: {})  # golf: every metric key stays null
+            if golf
+            else (
+                lambda: self._assemble_metrics(
+                    request, contact_recon, kp3_stack, contact_stack_index,
+                    phases, ball, eff_fps, window_t0_ms, tracks,
+                )
             ),
         )
 
@@ -661,7 +745,7 @@ class Sam3DAnalysisPipeline(AnalysisPipeline):
             "generating_tips",
             "tips",
             0.86,
-            lambda: generate_tips(metrics, self._settings.thresholds),
+            lambda: [] if golf else generate_tips(metrics, self._settings.thresholds),
         )
 
         mesh_key = f"meshes/{job_id}/contact.glb"
@@ -685,9 +769,9 @@ class Sam3DAnalysisPipeline(AnalysisPipeline):
 
         wall_s = time.perf_counter() - t_serve0
         log.info(
-            "serve %s analyzed in %.1fs (window %d frames, %d SAM3D keyframes, "
+            "%s %s analyzed in %.1fs (window %d frames, %d SAM3D keyframes, "
             "ball %s, phases %s)",
-            job_id, wall_s, len(frames), len(stack_picks),
+            request.sport, job_id, wall_s, len(frames), len(stack_picks),
             "tracked" if ball else "none", "detected" if phases else "none",
         )
 
@@ -723,11 +807,15 @@ class Sam3DAnalysisPipeline(AnalysisPipeline):
 
 
 def _to_keypoints(kp3d) -> List[Keypoint]:
+    """Serialize MHR70 keypoints, converting SAM3D's camera convention
+    (+Y down) to the contract's +Y up (180° about X, matching _export_glb).
+    Internal metric code keeps consuming the raw y-down arrays — angles are
+    rotation-invariant, and temporal.py negates y itself."""
     return [
         Keypoint(
             index=i,
             name=SAM3D_BODY_70_JOINTS[i],
-            xyz=(float(kp3d[i, 0]), float(kp3d[i, 1]), float(kp3d[i, 2])),
+            xyz=(float(kp3d[i, 0]), -float(kp3d[i, 1]), -float(kp3d[i, 2])),
             score=DEFAULT_KEYPOINT_SCORE,
         )
         for i in range(70)

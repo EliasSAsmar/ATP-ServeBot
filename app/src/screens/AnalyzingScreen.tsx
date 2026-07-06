@@ -24,6 +24,19 @@ const STAGE_LABELS: Record<JobStage, string> = {
   uploading_mesh: "Almost ready…",
 };
 
+// Golf runs the same stages but is a pure body scan — no form analysis.
+const GOLF_STAGE_LABELS: Record<JobStage, string> = {
+  downloading: "Preparing your swing…",
+  decoding: "Preparing your swing…",
+  segmenting: "Finding you in the video…",
+  selecting_keyframe: "Picking the swing frame…",
+  reconstructing: "Building your 3D body…",
+  filtering: "Finalizing the scan…",
+  computing_metrics: "Finalizing the scan…",
+  generating_tips: "Finalizing the scan…",
+  uploading_mesh: "Almost ready…",
+};
+
 const STILL_WORKING_MS = 30000;
 
 export function AnalyzingScreen({
@@ -55,6 +68,7 @@ export function AnalyzingScreen({
       getApi(settings),
       clip,
       settings.handedness,
+      settings.sport,
       (p) => {
         lastChange.current = Date.now();
         setStillWorking(false);
@@ -81,6 +95,10 @@ export function AnalyzingScreen({
     abortRef.current?.abort();
     onBackToLive();
   };
+
+  const golf = settings.sport === "golf";
+  const stageLabels = golf ? GOLF_STAGE_LABELS : STAGE_LABELS;
+  const tryAnotherLabel = golf ? "Try another swing" : "Try another serve";
 
   let body: JSX.Element;
   switch (phase.kind) {
@@ -122,7 +140,7 @@ export function AnalyzingScreen({
       body = (
         <>
           <p className="stage-label" aria-live="polite">
-            {phase.stage ? STAGE_LABELS[phase.stage] : "Analyzing…"}
+            {phase.stage ? stageLabels[phase.stage] : "Analyzing…"}
           </p>
           <div className="log">
             <span>
@@ -154,7 +172,7 @@ export function AnalyzingScreen({
     case "failed":
       body = (
         <Panel label="error" className="panel-error" ariaLabel="Analysis failed">
-          <h2>Couldn&rsquo;t analyze this serve</h2>
+          <h2>{golf ? "Couldn’t scan this swing" : "Couldn’t analyze this serve"}</h2>
           <p className="error-note">{phase.message}</p>
           {/* UI.md §8: retriable failures (including a failed upload — the clip
               stays in memory) offer Retry; AnalysisRun.retry() re-uploads if
@@ -174,19 +192,19 @@ export function AnalyzingScreen({
                 Retry
               </button>
               <button className="btn btn-ghost" onClick={onBackToLive}>
-                Try another serve
+                {tryAnotherLabel}
               </button>
               <Cursor />
             </div>
           ) : (
             <>
               <p className="muted small">
-                Make sure your whole body is in frame with good lighting, then try another serve.
+                Make sure your whole body is in frame with good lighting, then try again.
               </p>
               <div className="actions">
                 <span className="ps">$</span>
                 <button className="btn btn-ghost" onClick={onBackToLive}>
-                  Try another serve
+                  {tryAnotherLabel}
                 </button>
                 <Cursor />
               </div>
@@ -205,7 +223,9 @@ export function AnalyzingScreen({
     <div className="stage analyzing-stage">
       <TermWindow context="~/analyze">
         <div className="cmd">
-          <span className="prompt">$</span> servebot analyze <span className="path">serve.webm</span>{" "}
+          <span className="prompt">$</span> servebot {golf ? "scan" : "analyze"}{" "}
+          <span className="path">{golf ? "swing.webm" : "serve.webm"}</span>{" "}
+          {golf ? <span className="flag">--sport golf </span> : null}
           <span className="flag">--hand {settings.handedness}</span>
         </div>
         {body}

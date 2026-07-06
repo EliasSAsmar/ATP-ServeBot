@@ -213,8 +213,13 @@ class StubAnalysisPipeline(AnalysisPipeline):
             "filtering", "filter", 0.72, lambda: one_euro_passthrough(keypoints)
         )
 
-        # computing_metrics — REAL Step-5 engine over the keypoints.
+        # computing_metrics — REAL Step-5 engine over the keypoints. Golf is a
+        # body scan only: every metric key stays null and no tips fire.
+        golf = request.sport == "golf"
+
         def compute() -> Dict[str, Optional[dict]]:
+            if golf:
+                return {}
             point_map = {p.name: (p.xyz, p.score) for p in keypoints}
             return build_metrics(point_map, request.handedness, self._settings.thresholds)
 
@@ -225,7 +230,7 @@ class StubAnalysisPipeline(AnalysisPipeline):
             "generating_tips",
             "tips",
             0.86,
-            lambda: generate_tips(metrics, self._settings.thresholds),
+            lambda: [] if golf else generate_tips(metrics, self._settings.thresholds),
         )
 
         # uploading_mesh — really write a valid placeholder GLB to storage and

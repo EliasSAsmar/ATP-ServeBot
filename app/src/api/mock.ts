@@ -193,6 +193,7 @@ function buildTracking(contactMs: number): ServeTracking {
 }
 
 function buildResult(req: CreateServeRequest, nowMs: number): ServeResult {
+  const golf = req.sport === "golf";
   const points = buildKeypoints(req.handedness);
   const side = req.handedness;
   const byName = (n: string) => points.find((p) => p.name === n)!;
@@ -234,7 +235,17 @@ function buildResult(req: CreateServeRequest, nowMs: number): ServeResult {
         keypoints_3d: { format: "sam3d-body-70", count: 70, units: "meters", points },
       },
     ],
-    metrics: {
+    // Golf mode is a body scan only — no serve metrics/tips/tracking.
+    metrics: golf ? {
+      elbow_angle_deg: null,
+      shoulder_angle_deg: null,
+      knee_flexion_deg: null,
+      kinetic_chain_sequence: null,
+      toss_placement: null,
+      toss_consistency: null,
+      contact_height: null,
+      phase_timing: null,
+    } : {
       elbow_angle_deg: {
         value,
         unit: "degree",
@@ -296,8 +307,8 @@ function buildResult(req: CreateServeRequest, nowMs: number): ServeResult {
       },
       toss_consistency: null,
     },
-    tracking: buildTracking(refinedTs),
-    tips: confidence >= 0.5 && value !== null ? [elbowTip(value)] : [],
+    tracking: golf ? null : buildTracking(refinedTs),
+    tips: !golf && confidence >= 0.5 && value !== null ? [elbowTip(value)] : [],
     diagnostics: {
       frames_decoded: Math.round((req.clip.duration_ms / 1000) * fps),
       frames_masked: Math.round((req.clip.duration_ms / 1000) * fps),
@@ -378,6 +389,14 @@ export class MockServeApi implements ServeApi {
         message: "handedness must be one of: right, left",
         httpStatus: 400,
         field: "handedness",
+      });
+    }
+    if (req.sport !== undefined && req.sport !== "tennis" && req.sport !== "golf") {
+      throw new ApiError({
+        code: "invalid_request",
+        message: "sport must be one of: tennis, golf",
+        httpStatus: 400,
+        field: "sport",
       });
     }
     if (req.contact_timestamp_ms < 0 || req.contact_timestamp_ms > req.clip.duration_ms) {

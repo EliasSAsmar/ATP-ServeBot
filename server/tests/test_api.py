@@ -290,6 +290,34 @@ class TestEndToEnd:
         assert elbow["joints"] == ["left_shoulder", "left_elbow", "left_wrist"]
         assert elbow["value"] == 177.6  # mirrored pose, identical angle
 
+    def test_invalid_sport(self, client):
+        object_key, meta = upload_clip(client)
+        r = create_serve(client, object_key, meta, sport="cricket")
+        assert_error_envelope(r, 400, "invalid_request", field="sport")
+
+    def test_golf_body_scan(self, client):
+        """sport=golf → mesh + 70 keypoints, but NO metrics/tips (body scan only)."""
+        object_key, meta = upload_clip(client)
+        r = create_serve(client, object_key, meta, sport="golf")
+        assert r.status_code == 202, r.text
+        payload = poll_until_terminal(client, r.json()["job_id"])
+        assert payload["status"] == "succeeded"
+
+        result = payload["result"]
+        # the reconstruction block is intact, exactly as for tennis
+        assert len(result["keyframes"]) == 1
+        kf = result["keyframes"][0]
+        assert kf["keypoints_3d"]["count"] == 70
+        assert len(kf["keypoints_3d"]["points"]) == 70
+        glb = client.get(kf["mesh"]["glb_url"])
+        assert glb.status_code == 200
+        assert glb.content[:4] == b"glTF"
+
+        # every metric key is null and no tips fire
+        assert all(v is None for v in result["metrics"].values())
+        assert result["tips"] == []
+        assert result["tracking"] is None
+
     def test_empty_clip_fails_unprocessable(self, client):
         object_key, meta = upload_clip(client, content=b"")
         r = create_serve(client, object_key, meta)

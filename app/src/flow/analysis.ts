@@ -7,6 +7,7 @@ import type {
   Handedness,
   JobResponse,
   JobStage,
+  Sport,
 } from "../types/api";
 
 /** A finalized clip from the ring buffer, ready to submit. */
@@ -54,6 +55,7 @@ export class AnalysisRun {
     private api: ServeApi,
     private clip: CapturedClip,
     private handedness: Handedness,
+    private sport: Sport,
     private onPhase: (phase: AnalysisPhase) => void,
     private signal?: AbortSignal,
   ) {
@@ -107,6 +109,7 @@ export class AnalysisRun {
     const request: CreateServeRequest = {
       object_key: this.objectKey!,
       handedness: this.handedness,
+      sport: this.sport,
       contact_timestamp_ms: this.clip.contactTimestampMs,
       clip: this.clip.meta,
       ...(this.clip.edgeDetect ? { edge_detect: this.clip.edgeDetect } : {}),

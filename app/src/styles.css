@@ -24,10 +24,17 @@
 }
 
 html,
-body,
-#root {
+body {
   height: 100%;
   margin: 0;
+}
+
+/* Column layout so the sport tab bar (when shown) sits above the stage and
+   the stage fills the remaining viewport. */
+#root {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 body {
@@ -115,11 +122,45 @@ ol {
 /* ---------- stage + terminal window ---------- */
 
 .stage {
-  min-height: 100%;
+  flex: 1;
+  min-height: 0;
   padding: clamp(12px, 3vw, 34px);
   display: flex;
   justify-content: center;
   align-items: flex-start;
+}
+
+/* ---------- sport tabs (tennis / golf) ---------- */
+
+.sport-tabs {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: clamp(10px, 2vw, 18px) 12px 0;
+}
+.sport-tab {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  padding: 6px 16px;
+  border-radius: 5px 5px 0 0;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-bottom-color: var(--border-hi);
+}
+.sport-tab:hover {
+  color: var(--green);
+  border-color: var(--green-dim);
+}
+.sport-tab-active {
+  color: var(--green);
+  border-color: var(--green-dim);
+  background: rgba(90, 242, 154, 0.08);
+  text-shadow: 0 0 8px var(--glow);
 }
 
 .win {
@@ -435,7 +476,7 @@ ol {
 /* ---------- live view ---------- */
 
 .live-stage {
-  height: 100dvh;
+  /* fills the viewport minus the sport tab bar (flex column on #root) */
   align-items: stretch;
   padding: clamp(8px, 2vw, 20px);
 }
