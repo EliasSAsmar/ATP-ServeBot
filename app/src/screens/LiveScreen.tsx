@@ -178,10 +178,14 @@ export function LiveScreen({
       }
 
       // Use the chosen camera if set (e.g. an iPhone via Continuity Camera),
-      // otherwise the browser default front camera.
+      // otherwise the browser default front camera. Ask for a tall ideal
+      // (4:3-ish) so cameras that support it deliver full vertical FOV — a
+      // 720p request forces 16:9 and throws away vertical pixels on e.g.
+      // the 4:3 FaceTime HD camera. Cameras that are 16:9-only (iPhone)
+      // just return their native shape.
       const videoConstraints: MediaTrackConstraints = settings.cameraDeviceId
-        ? { deviceId: { exact: settings.cameraDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-        : { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } };
+        ? { deviceId: { exact: settings.cameraDeviceId }, width: { ideal: 1920 }, height: { ideal: 1440 } }
+        : { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 1440 } };
 
       let stream: MediaStream;
       try {

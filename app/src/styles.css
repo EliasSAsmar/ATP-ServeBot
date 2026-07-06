@@ -547,7 +547,10 @@ ol {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* contain, not cover: show the ENTIRE camera frame (letterboxed) so the
+     player can actually see their vertical framing — cover silently cropped
+     the top/bottom of the feed while the recorded clip kept it. */
+  object-fit: contain;
 }
 .live-canvas {
   pointer-events: none;
